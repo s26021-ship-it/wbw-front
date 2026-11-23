@@ -367,7 +367,6 @@ export default function App() {
     {modal==='delete-account' && <Modal title="계정 탈퇴" close={()=>{setModal('');setDeleteConfirmName('')}}><div className="delete-warning"><div className="warning-icon"><Trash2 size={20}/></div><h3>정말 탈퇴하시겠어요?</h3><p>탈퇴하면 계정과 업로드한 글이 모두 삭제되며 되돌릴 수 없습니다.</p><label>확인을 위해 닉네임을 입력해 주세요<input value={deleteConfirmName} placeholder={data.prefs.nickname} onChange={e=>setDeleteConfirmName(e.target.value)}/></label></div><div className="modal-footer"><button className="button button-outline" onClick={()=>{setModal('');setDeleteConfirmName('')}}>취소</button><button className="button button-danger" disabled={deleteConfirmName!==data.prefs.nickname} onClick={()=>setNotice('계정 삭제는 실제 인증·서버 연동 후 활성화됩니다.')}>영구 삭제</button></div></Modal>}
 
     {notice && <div className="toast"><Check size={16}/>{notice}<button onClick={()=>setNotice('')}><X size={14}/></button></div>}
-    <div className="offline-note">{isSupabaseConfigured?'백엔드 연결됨':'현재 브라우저 로컬 저장 모드 · 실제 계정/서버 저장은 Supabase 설정과 스키마 적용이 필요합니다.'}</div>
     <style>{`@media print{@page{size:${draft.page};margin:${draft.marginTop}mm ${draft.marginRight}mm ${draft.marginBottom}mm ${draft.marginLeft}mm}}`}</style>
     <div className="print-only" style={{ ...paperStyle(draft), '--export-background': exportPalette.background, '--export-foreground': exportTextColor }}>{draft.title && <h1>{draft.title}</h1>}<div dangerouslySetInnerHTML={{__html:draft.body}} /></div>
   </main>;
