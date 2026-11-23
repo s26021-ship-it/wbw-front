@@ -5,7 +5,7 @@ import {
   AlignCenter, AlignLeft, AlignRight, ArrowDown, ArrowLeft, ArrowUpDown,
   Bold, BookOpen, Check, ChevronDown, ChevronRight, ChevronsUpDown,
   CircleHelp, Clock3, Download, FileImage, FilePlus2, FileText, Folder,
-  FolderPlus, Italic, Link2, LogOut, Menu, MoreHorizontal, PanelLeftClose,
+  FolderPlus, Italic, Link2, LogOut, Menu, Minus, MoreHorizontal, PanelLeftClose,
   Plus, Printer, Search, Settings, Share2, SlidersHorizontal, Sparkles,
   Trash2, Underline, X
 } from 'lucide-react';
@@ -121,6 +121,40 @@ function PagePreview({ draft }) {
   </div>;
 }
 
+function ReadDocument({ doc, theme, onBack, isShared, viewerNickname = '말하는 하마', viewerEmail = '', onOpenSettings, locked = false, password = '', onPasswordChange, onVerify, onEdit, onDelete, dialog, dialogInput, setDialogInput, closeDialog, notice, clearNotice }) {
+  const themeClass = theme === 'black' ? 'theme-black' : theme === 'sky' ? 'theme-sky' : theme === 'sand' ? 'theme-sand' : theme === 'gray' ? 'theme-gray' : '';
+  const palette = themePalettes[theme] || themePalettes.white;
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const menuRef = useRef(null);
+  const contentColor = doc.color?.toLowerCase() === '#252525' ? palette.foreground : (doc.color || palette.foreground);
+  useEffect(() => {
+    const oldBodyColor = document.body.style.backgroundColor;
+    const oldHtmlColor = document.documentElement.style.backgroundColor;
+    document.body.style.backgroundColor = palette.background;
+    document.documentElement.style.backgroundColor = palette.background;
+    return () => { document.body.style.backgroundColor = oldBodyColor; document.documentElement.style.backgroundColor = oldHtmlColor; };
+  }, [palette.background]);
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+    const closeOutside = event => { if (!menuRef.current?.contains(event.target)) setMenuOpen(false); };
+    document.addEventListener('pointerdown', closeOutside);
+    return () => { document.removeEventListener('pointerdown', closeOutside); };
+  }, [menuOpen]);
+  return <main className={`app-shell reader-shell ${themeClass}`} style={{ '--app-font': doc.font || 'Pretendard', '--reader-bg': palette.background, '--reader-text': palette.foreground }}>
+    <header className="reader-topbar"><button className="brand" onClick={onBack}><span className="brand-mark">w.</span><span>WBW</span></button><div className="reader-actions"><span className="reader-label">READING</span>{!isShared && !locked && <div className="reader-menu-wrap" ref={menuRef}><button className="reader-more" aria-label="글 메뉴" aria-expanded={menuOpen} onClick={() => setMenuOpen(open => !open)}><MoreHorizontal size={20}/></button>{menuOpen && <div className="row-menu reader-row-menu"><button onClick={() => { setMenuOpen(false); onEdit?.(); }}>수정하기</button><button className="danger" onClick={() => { setMenuOpen(false); onDelete?.(); }}>삭제하기</button></div>}</div>}<button className="avatar reader-avatar" aria-label="프로필 열기" onClick={() => setProfileOpen(true)}>{viewerNickname.slice(0,1) || 'W'}</button></div></header>
+    {locked ? <section className="reader-password-card"><div className="reader-lock-mark">w.</div><span className="eyebrow">PASSWORD PROTECTED</span><h1>비밀번호를 입력해 주세요</h1><p>글쓴이가 공유한 글을 읽으려면 비밀번호가 필요해요.</p><form onSubmit={e => { e.preventDefault(); onVerify(); }}><input type="password" value={password} onChange={e => onPasswordChange(e.target.value)} autoFocus placeholder="열람 비밀번호"/><button className="button button-dark">글 읽기</button></form></section> : <article className="reader-paper" style={{ fontFamily: doc.font || 'Pretendard', color: palette.foreground }}>
+      <div className="reader-paper-meta"><span>WRITE BY WRITING</span><span>{formatDate(doc.updated || Date.now())}</span></div>
+      <h1 style={{ color: palette.foreground }}>{doc.title || '제목 없는 글'}</h1>
+      <div className="reader-author">{doc.authorNickname || '말하는 하마'}</div>
+      <div className="reader-body" style={{ fontFamily: doc.font || 'Pretendard', fontSize: `${doc.size || 16}px`, lineHeight: doc.line || 1.9, letterSpacing: `${doc.spacing || 0}px`, color: contentColor }} dangerouslySetInnerHTML={{ __html: doc.body || '' }}/>
+    </article>}
+    {dialog && <Modal title={dialog.title} close={() => closeDialog(false)}><div className="confirm-dialog-copy"><p>{dialog.message}</p></div><div className="modal-footer"><button className="button button-outline" onClick={() => closeDialog(false)}>취소</button><button className={`button ${dialog.danger?'button-danger':'button-dark'}`} onClick={() => closeDialog(true)}>{dialog.confirmLabel || '확인'}</button></div></Modal>}
+    {notice && <div className="notice-veil" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)clearNotice()}}><section className="notice-dialog" role="alertdialog" aria-modal="true" aria-live="assertive"><div className="notice-icon"><Check size={18}/></div><p>{notice}</p><button className="button button-dark" onClick={clearNotice}>확인</button></section></div>}
+    {profileOpen && <><div className="drawer-scrim" onClick={() => setProfileOpen(false)}/><aside className="profile-drawer"><header className="drawer-head"><span className="eyebrow">ACCOUNT</span><IconButton title="닫기" onClick={() => setProfileOpen(false)}><X size={18}/></IconButton></header><div className="profile-summary"><div className="profile-avatar">{viewerNickname.slice(0,1) || 'W'}</div><h2>{viewerNickname}</h2><p>{viewerEmail || 'WBW 사용자'}</p><span className="profile-tag">WBW WRITER</span></div><div className="drawer-rule"/><button className="drawer-link" onClick={onBack}><BookOpen size={18}/><span>{isShared ? 'WBW 둘러보기' : '내 서재'}</span><ChevronRight size={16}/></button>{onOpenSettings && <button className="drawer-link" onClick={() => { setProfileOpen(false); onOpenSettings(); }}><Settings size={18}/><span>환경 설정</span><ChevronRight size={16}/></button>}</aside></>}
+  </main>;
+}
+
 export default function App() {
   const [data, setData] = useState(loadData);
   const [authUser, setAuthUser] = useState(null);
@@ -131,14 +165,22 @@ export default function App() {
   const [fatalError, setFatalError] = useState(null);
   const [authSuccess, setAuthSuccess] = useState('');
   const [activeFolder, setActiveFolder] = useState('f2');
+  const [folderDeleteMode, setFolderDeleteMode] = useState(false);
   const [sortMode, setSortMode] = useState('modified');
   const [selectedDoc, setSelectedDoc] = useState(null);
+  const [draftFolder, setDraftFolder] = useState(null);
+  const [openDocMenu, setOpenDocMenu] = useState(null);
+  const [sharePasswordInput, setSharePasswordInput] = useState('');
+  const [sharePasswordVerified, setSharePasswordVerified] = useState(false);
   const [view, setView] = useState('library');
   const [profileOpen, setProfileOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [modal, setModal] = useState('');
+  const [dialog, setDialog] = useState(null);
+  const [dialogInput, setDialogInput] = useState('');
   const [query, setQuery] = useState('');
   const [notice, setNotice] = useState('');
+  const [toastNotice, setToastNotice] = useState('');
   const [deleteConfirmName, setDeleteConfirmName] = useState('');
   const [draft, setDraft] = useState({ title: '', body: '', page: 'A4', viewMode: 'single', visibility: '비공개', scheduleEnabled: false, scheduledAt: '', marginTop: 24, marginRight: 24, marginBottom: 24, marginLeft: 24, font: 'Pretendard', size: 16, spacing: 0, line: 1.9, color: '#252525' });
   const [passwordDraft, setPasswordDraft] = useState('');
@@ -148,6 +190,8 @@ export default function App() {
   const nicknameUserIdRef = useRef(null);
   const editorSelectionRef = useRef(null);
   const currentDoc = data.docs.find(d => d.id === selectedDoc);
+  const shareMatch = window.location.pathname.match(/^\/share\/([^/]+)\/?$/);
+  const sharedDoc = shareMatch ? data.docs.find(doc => doc.id === shareMatch[1]) : null;
   const selectedFolder = data.folders.find(f => f.id === activeFolder);
   const childFolders = data.folders.filter(f => f.parent === activeFolder);
   const visibleDocs = useMemo(() => data.docs.filter(d => (activeFolder === null || d.folder === activeFolder) && (!query || d.title.toLowerCase().includes(query.toLowerCase()))).sort((a,b) => sortMode === 'modified' ? (b.updated ?? 0) - (a.updated ?? 0) : (b.created ?? b.updated ?? 0) - (a.created ?? a.updated ?? 0)), [data.docs, activeFolder, query, sortMode]);
@@ -202,9 +246,16 @@ export default function App() {
     };
   }, []);
   useEffect(() => {
-    if (!notice) return;
-    const t = setTimeout(() => setNotice(''), 3000); return () => clearTimeout(t);
-  }, [notice]);
+    if (!openDocMenu) return undefined;
+    const closeOutside = event => { if (!event.target.closest?.('.row-menu-wrap')) setOpenDocMenu(null); };
+    document.addEventListener('pointerdown', closeOutside);
+    return () => { document.removeEventListener('pointerdown', closeOutside); };
+  }, [openDocMenu]);
+  useEffect(() => {
+    if (!toastNotice) return undefined;
+    const timer = setTimeout(() => setToastNotice(''), 3000);
+    return () => clearTimeout(timer);
+  }, [toastNotice]);
   useEffect(() => {
     if (view !== 'editor' || !editorRef.current) return;
     const editor = editorRef.current;
@@ -220,13 +271,25 @@ export default function App() {
     editorSelectionRef.current = range.cloneRange();
   }, [view, selectedDoc]);
 
-  function updatePrefs(key, value) { setData(d => ({ ...d, prefs: { ...d.prefs, [key]: value } })); }
+  function updatePrefs(key, value) {
+    setData(d => ({
+      ...d,
+      prefs: { ...d.prefs, [key]: value },
+      ...(key === 'nickname' ? { docs: d.docs.map(doc => ({ ...doc, authorNickname: value })) } : {})
+    }));
+  }
+  async function persistNickname() {
+    if (!authUser || !supabase) return;
+    const { error } = await supabase.auth.updateUser({ data: { nickname: data.prefs.nickname } });
+    if (error) setNotice('닉네임을 계정에 저장하지 못했어요.');
+  }
   function openDoc(doc) {
     const oldMargin = doc.margin ?? 24;
-    setSelectedDoc(doc.id); setDraft({ title: doc.title === '제목 없음' ? '' : (doc.title || ''), body: doc.body, page: doc.page || 'A4', viewMode: doc.viewMode || 'single', visibility: doc.visibility || '비공개', scheduleEnabled: doc.scheduleEnabled || false, scheduledAt: doc.scheduledAt || '', marginTop: doc.marginTop ?? oldMargin, marginRight: doc.marginRight ?? oldMargin, marginBottom: doc.marginBottom ?? oldMargin, marginLeft: doc.marginLeft ?? oldMargin, font: doc.font || data.prefs.font, size: doc.size || 16, spacing: doc.spacing || 0, line: doc.line || 1.9, color: doc.color || '#252525' }); setSaveState('저장됨'); setView('editor'); setProfileOpen(false);
+    setSelectedDoc(doc.id); setDraftFolder(doc.folder ?? null); setDraft({ title: doc.title === '제목 없음' ? '' : (doc.title || ''), body: doc.body, page: doc.page || 'A4', viewMode: doc.viewMode || 'single', visibility: doc.visibility || '비공개', scheduleEnabled: doc.scheduleEnabled || false, scheduledAt: doc.scheduledAt || '', marginTop: doc.marginTop ?? oldMargin, marginRight: doc.marginRight ?? oldMargin, marginBottom: doc.marginBottom ?? oldMargin, marginLeft: doc.marginLeft ?? oldMargin, font: doc.font || data.prefs.font, size: doc.size || 16, spacing: doc.spacing || 0, line: doc.line || 1.9, color: doc.color || '#252525' }); setSaveState('저장됨'); setView('editor'); setProfileOpen(false);
   }
   function newDoc() {
-    const doc = { id: crypto.randomUUID(), folder: activeFolder, title: '제목 없음', body: '<p><br></p>', updated: Date.now(), visibility: '비공개' };
+    const doc = { id: crypto.randomUUID(), folder: activeFolder, title: '', body: '<p><br></p>', updated: Date.now(), visibility: '비공개', uploaded: false };
+    setDraftFolder(activeFolder);
     openDoc(doc);
   }
   function saveDraft(next = draft) {
@@ -242,7 +305,7 @@ export default function App() {
       const exists = d.docs.some(doc => doc.id === selectedDoc);
       return { ...d, docs: exists
         ? d.docs.map(doc => doc.id === selectedDoc ? { ...doc, created: doc.created ?? doc.updated ?? now, ...savedFields } : doc)
-        : [{ id: selectedDoc, folder: activeFolder, visibility: '비공개', created: now, ...savedFields }, ...d.docs] };
+        : [{ id: selectedDoc, folder: draftFolder, visibility: '비공개', uploaded: false, created: now, ...savedFields }, ...d.docs] };
     });
     setTimeout(() => setSaveState('저장됨'), 250);
     return true;
@@ -278,6 +341,22 @@ export default function App() {
     const selection = window.getSelection();
     if (selection?.rangeCount && editorRef.current?.contains(selection.anchorNode)) editorSelectionRef.current = selection.getRangeAt(0).cloneRange();
   }
+  function changeFont(font) {
+    const selection = window.getSelection();
+    const range = selection?.rangeCount && editorRef.current?.contains(selection.anchorNode) && !selection.isCollapsed
+      ? selection.getRangeAt(0).cloneRange()
+      : editorSelectionRef.current;
+    if (!range || range.collapsed || !editorRef.current?.contains(range.commonAncestorContainer)) {
+      changeDraft('font', font);
+      return;
+    }
+    editorRef.current.focus({ preventScroll: true });
+    selection.removeAllRanges();
+    selection.addRange(range);
+    document.execCommand('fontName', false, font);
+    rememberEditorSelection();
+    onBodyInput();
+  }
   function changeFontSize(size) {
     if (!Number.isFinite(size) || size < 1 || size > 72) return;
     const selection = window.getSelection();
@@ -301,12 +380,50 @@ export default function App() {
     onBodyInput();
   }
   function createFolder() {
-    const name = window.prompt('새 폴더 이름을 입력해 주세요.'); if (!name?.trim()) return;
-    const folder = { id: crypto.randomUUID(), name: name.trim(), parent: activeFolder };
-    setData(d => ({ ...d, folders: [...d.folders, folder] })); setNotice('폴더를 만들었어요.');
+    setDialogInput('');
+    setDialog({ type: 'prompt', title: '새 폴더', message: '폴더 이름을 입력해 주세요.', confirmLabel: '만들기', onConfirm: name => {
+      if (!name?.trim()) { setNotice('폴더 이름을 입력해 주세요.'); return; }
+      const folder = { id: crypto.randomUUID(), name: name.trim(), parent: activeFolder };
+      setData(d => ({ ...d, folders: [...d.folders, folder] })); setNotice('폴더를 만들었어요.');
+    }});
+  }
+  function deleteFolder(folder) {
+    const descendants = new Set();
+    const collect = id => data.folders.filter(item => item.parent === id).forEach(child => { descendants.add(child.id); collect(child.id); });
+    collect(folder.id);
+    const removed = new Set([folder.id, ...descendants]);
+    const warning = descendants.size
+      ? `“${folder.name}” 폴더와 하위 폴더 ${descendants.size}개, 그 안의 글 ${data.docs.filter(doc => removed.has(doc.folder)).length}개를 모두 삭제할까요? 삭제한 내용은 복구할 수 없습니다.`
+      : `“${folder.name}” 폴더와 그 안의 글 ${data.docs.filter(doc => doc.folder === folder.id).length}개를 삭제할까요? 삭제한 내용은 복구할 수 없습니다.`;
+    setDialog({ type: 'confirm', title: '폴더 삭제', message: warning, confirmLabel: '삭제하기', danger: true, onConfirm: () => {
+      setData(current => ({ ...current, folders: current.folders.filter(item => !removed.has(item.id)), docs: current.docs.filter(doc => !removed.has(doc.folder)) }));
+      if (removed.has(activeFolder)) setActiveFolder(folder.parent ?? null);
+      if (removed.has(draftFolder)) { setDraftFolder(null); setView('library'); }
+      setToastNotice('폴더와 포함된 글을 삭제했어요.');
+    }});
+  }
+  function moveFolder(folderId, nextParentId) {
+    const branch = new Set();
+    const collect = id => data.folders.filter(item => item.parent === id).forEach(child => { branch.add(child.id); collect(child.id); });
+    collect(folderId);
+    if (nextParentId === folderId || branch.has(nextParentId)) { setNotice('폴더를 자기 자신이나 하위 폴더 안으로 옮길 수 없어요.'); return; }
+    setData(current => ({ ...current, folders: current.folders.map(folder => folder.id === folderId ? { ...folder, parent: nextParentId } : folder) }));
+    setNotice(nextParentId ? '하위 폴더로 옮겼어요.' : '최상위 폴더로 옮겼어요.');
   }
   function renameFolder(folder, nextName) { if (nextName?.trim()) setData(d => ({ ...d, folders: d.folders.map(f => f.id === folder.id ? { ...f, name: nextName.trim() } : f) })); }
-  function deleteDoc(doc) { if (!window.confirm(`“${doc.title}” 글을 삭제할까요?`)) return; setData(d => ({ ...d, docs: d.docs.filter(x => x.id !== doc.id) })); if (selectedDoc === doc.id) setView('library'); setNotice('글을 삭제했어요.'); }
+  function deleteDoc(doc) {
+    setDialog({ type: 'confirm', title: '글 삭제', message: `“${doc.title || '제목 없음'}” 글을 삭제할까요? 삭제한 글은 복구할 수 없습니다.`, confirmLabel: '삭제하기', danger: true, onConfirm: () => {
+      setData(d => ({ ...d, docs: d.docs.filter(item => item.id !== doc.id) }));
+      if (selectedDoc === doc.id) { setView('library'); setSelectedDoc(null); if (window.location.pathname.startsWith('/share/')) window.history.pushState({}, '', '/'); }
+      setToastNotice('글을 삭제했어요.');
+    }});
+  }
+  function closeDialog(confirmed = false) {
+    const current = dialog;
+    setDialog(null);
+    if (confirmed) current?.onConfirm?.(dialogInput);
+    setDialogInput('');
+  }
   function exportText() {
     const plain = countChars(draft.body); const blob = new Blob([`${draft.title}\n\n${plain}`], { type: 'text/plain;charset=utf-8' });
     download(blob, `${draft.title || 'WBW 문서'}.txt`); setModal('');
@@ -361,19 +478,63 @@ export default function App() {
     try { await navigator.clipboard.writeText(url); setNotice('공유 링크를 복사했어요. 실제 링크 권한 검증은 백엔드 연결 후 동작합니다.'); }
     catch { setNotice('공유 링크 권한 검증은 백엔드 연결 후 동작합니다.'); }
   }
+  function openDocFromList(doc) {
+    const wasUploaded = doc.uploaded ?? doc.visibility !== '비공개';
+    if (!wasUploaded) { openDoc(doc); return; }
+    setSelectedDoc(doc.id);
+    setView('reader');
+  }
+  function editDoc(doc) { setOpenDocMenu(null); openDoc(doc); }
+  function confirmSharePassword() {
+    if (sharePasswordInput === sharedDoc?.sharePassword) setSharePasswordVerified(true);
+    else setNotice('비밀번호가 맞지 않아요.');
+  }
+  function saveUpload() {
+    if (!hasBodyContent(draft.body)) { setNotice('본문이 비어 있는 글은 저장하거나 업로드할 수 없어요.'); return; }
+    if (draft.visibility === '비밀번호 보호' && !passwordDraft.trim()) { setNotice('열람 비밀번호를 입력해 주세요.'); return; }
+    if (draft.scheduleEnabled && (!draft.scheduledAt || new Date(draft.scheduledAt) <= new Date())) { setNotice('예약 업로드는 현재보다 이후의 시간을 선택해 주세요.'); return; }
+    if (!draft.title.trim()) { setNotice('업로드할 글 제목을 입력해 주세요.'); return; }
+    saveDraft();
+    setData(d => ({ ...d, docs: d.docs.map(doc => doc.id === selectedDoc ? { ...doc, uploaded: true, sharePassword: draft.visibility === '비밀번호 보호' ? passwordDraft : '', visibility: draft.visibility || '비공개', authorNickname: d.prefs.nickname, theme: d.prefs.theme } : doc) }));
+    setModal(''); setPasswordDraft(''); setNotice(draft.scheduleEnabled ? '예약 업로드를 설정했어요.' : '글을 업로드했어요.');
+  }
   const folderLabel = folder => folder?.name || '모든 글';
+  function folderPath(folderId) {
+    const path = [];
+    let folder = data.folders.find(item => item.id === folderId);
+    while (folder) {
+      path.unshift(folder.name);
+      folder = data.folders.find(item => item.id === folder.parent);
+    }
+    return path.length ? path.join(' > ') : '모든 글';
+  }
+  function handleFolderDrop(event, targetParentId) {
+    event.preventDefault();
+    const draggedId = event.dataTransfer.getData('text/wbw-folder');
+    if (draggedId) moveFolder(draggedId, targetParentId);
+  }
   const themeClass = data.prefs.theme === 'black' ? 'theme-black' : data.prefs.theme === 'sky' ? 'theme-sky' : data.prefs.theme === 'sand' ? 'theme-sand' : data.prefs.theme === 'gray' ? 'theme-gray' : '';
   const exportPalette = themePalettes[data.prefs.theme] || themePalettes.mono;
   const exportTextColor = draft.color?.toLowerCase() === '#252525' ? exportPalette.foreground : draft.color;
   const routePath = window.location.pathname.replace(/\/+$/, '') || '/';
   const knownErrorPath = ['/403', '/500', '/offline'].includes(routePath);
-  const showNotFound = routePath !== '/' && routePath !== '/index.html' && !knownErrorPath;
+  const isShareRoute = /^\/share\/[^/]+\/?$/.test(window.location.pathname);
+  const showNotFound = routePath !== '/' && routePath !== '/index.html' && !knownErrorPath && !isShareRoute;
 
   if (routePath === '/403') return <ErrorScreen kind="forbidden" themeClass={themeClass} font={data.prefs.font} onHome={() => window.location.assign('/')}/>;
   if (routePath === '/500') return <ErrorScreen kind="server" themeClass={themeClass} font={data.prefs.font} onHome={() => window.location.assign('/')} onRetry={() => window.location.reload()}/>;
   if (routePath === '/offline') return <ErrorScreen kind="offline" themeClass={themeClass} font={data.prefs.font} onHome={() => window.location.assign('/')} onRetry={() => window.location.reload()}/>;
   if (showNotFound) return <ErrorScreen kind="not-found" themeClass={themeClass} font={data.prefs.font} onHome={() => window.location.assign('/')}/>;
   if (fatalError) return <ErrorScreen kind={fatalError} themeClass={themeClass} font={data.prefs.font} onHome={() => window.location.assign('/')} onRetry={() => window.location.reload()}/>;
+
+  if (isShareRoute) {
+    if (!sharedDoc) return <ErrorScreen kind="not-found" themeClass={themeClass} font={data.prefs.font} onHome={() => window.location.assign('/')}/>;
+    const sharedIsUploaded = sharedDoc.uploaded ?? sharedDoc.visibility !== '비공개';
+    if (!sharedIsUploaded || sharedDoc.visibility === '비공개') return <ErrorScreen kind="forbidden" themeClass={themeClass} font={data.prefs.font} onHome={() => window.location.assign('/')}/>;
+    if (sharedDoc.scheduleEnabled && sharedDoc.scheduledAt && new Date(sharedDoc.scheduledAt) > new Date()) return <ErrorScreen kind="not-found" themeClass={themeClass} font={data.prefs.font} onHome={() => window.location.assign('/')}/>;
+    const passwordLocked = sharedDoc.visibility === '비밀번호 보호' && !sharePasswordVerified;
+    return <ReadDocument doc={sharedDoc} theme={data.prefs.theme || 'white'} viewerNickname={data.prefs.nickname} viewerEmail={authUser?.email} isShared locked={passwordLocked} password={sharePasswordInput} onPasswordChange={setSharePasswordInput} onVerify={confirmSharePassword} onBack={() => window.location.assign('/')} notice={notice} clearNotice={() => setNotice('')}/>;
+  }
 
   if (!authReady) return <main className={`app-shell login-shell ${themeClass}`}><div className="auth-loading"><span className="brand-mark">w.</span><span>WBW를 준비하고 있어요</span></div></main>;
   if (!authUser && !previewMode) return <LoginScreen
@@ -382,6 +543,8 @@ export default function App() {
     onPreview={() => { setPreviewMode(true); setAuthError(''); setAuthSuccess(''); }}
     clearMessages={() => { setAuthError(''); setAuthSuccess(''); }}
   />;
+
+  if (view === 'reader' && currentDoc) return <main className={`app-shell ${themeClass}`} style={{ '--app-font': data.prefs.font }}><ReadDocument doc={currentDoc} theme={data.prefs.theme || 'white'} viewerNickname={data.prefs.nickname} viewerEmail={authUser?.email || '로컬 미리보기 계정'} isShared={false} onBack={() => setView('library')} onEdit={() => editDoc(currentDoc)} onDelete={() => deleteDoc(currentDoc)} onOpenSettings={() => { setView('library'); setSettingsOpen(true); }} dialog={dialog} dialogInput={dialogInput} setDialogInput={setDialogInput} closeDialog={closeDialog} notice={notice} clearNotice={() => setNotice('')}/></main>;
 
   return <main className={`app-shell ${themeClass}`} style={{ '--app-font': data.prefs.font }}>
     <div className="topbar">
@@ -393,39 +556,41 @@ export default function App() {
     {view === 'library' && <section className="library-page">
       <div className="welcome-row"><div><p className="eyebrow">MY WORKSPACE</p><h1>나의 서재<span className="period">.</span></h1><p className="subtle">생각을 모으고, 문장으로 꺼내보세요.</p></div><button className="button button-dark" onClick={newDoc}><Plus size={17}/>새 글 쓰기</button></div>
       <div className="workspace-grid">
-        <aside className="folder-card"><div className="card-heading"><div><span className="eyebrow">LIBRARY</span><h2>폴더</h2></div><IconButton title="폴더 추가" onClick={createFolder}><Plus size={18}/></IconButton></div>
-          <button className={`folder-row ${activeFolder===null?'selected':''}`} onClick={() => setActiveFolder(null)}><BookOpen size={17}/><span>모든 글</span><small>{totalCount}</small></button>
-          {data.folders.filter(f => !f.parent).map(folder => <FolderTree key={folder.id} folder={folder} all={data.folders} active={activeFolder} setActive={setActiveFolder} docs={data.docs} rename={renameFolder}/>) }
-          <div className="folder-footer"><button onClick={createFolder}><FolderPlus size={16}/>새 폴더</button><span>{data.folders.length}개</span></div>
+        <aside className="folder-card"><div className="card-heading"><div><span className="eyebrow">LIBRARY</span><h2>폴더</h2></div><div className="folder-heading-actions"><IconButton title="폴더 추가" onClick={createFolder}><Plus size={18}/></IconButton><IconButton title={folderDeleteMode?'폴더 삭제 모드 닫기':'폴더 삭제 모드'} active={folderDeleteMode} onClick={()=>setFolderDeleteMode(value=>!value)}><Minus size={18}/></IconButton></div></div>
+          <button className={`folder-row ${activeFolder===null?'selected':''}`} onClick={() => setActiveFolder(null)} onDragOver={event=>event.preventDefault()} onDrop={event=>handleFolderDrop(event,null)}><BookOpen size={17}/><span>모든 글</span><small>{totalCount}</small></button>
+          {data.folders.filter(f => !f.parent).map(folder => <FolderTree key={folder.id} folder={folder} all={data.folders} active={activeFolder} setActive={setActiveFolder} docs={data.docs} rename={renameFolder} deleteMode={folderDeleteMode} removeFolder={deleteFolder} moveFolder={moveFolder}/>) }
         </aside>
         <section className="documents-card"><div className="documents-head"><div><div className="crumb"><span>내 서재</span><ChevronRight size={14}/><strong>{folderLabel(selectedFolder)}</strong></div><h2>{folderLabel(selectedFolder)}</h2><p className="subtle">{visibleDocs.length}개의 글</p></div><div className="list-actions"><label className="search-box"><Search size={16}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="글 검색"/></label><button type="button" className="sort-toggle" onClick={()=>setSortMode(mode=>mode==='modified'?'created':'modified')} title="정렬 기준 전환"><ArrowUpDown size={16}/><span>{sortMode==='modified'?'최근 수정순':'만든 순'}</span></button></div></div>
           {!!childFolders.length && <div className="subfolder-strip">{childFolders.map(f=><button className="subfolder-chip" key={f.id} onClick={()=>setActiveFolder(f.id)}><Folder size={15}/>{f.name}<ChevronRight size={14}/></button>)}</div>}
-          {visibleDocs.length ? <div className="doc-list">{visibleDocs.map(doc => <article className="doc-row" key={doc.id}><button className="doc-main" onClick={()=>openDoc(doc)}><span className="doc-icon"><FileText size={18}/></span><span className="doc-copy"><strong>{doc.title || '제목 없음'}</strong><small>{countChars(doc.body).slice(0,68) || '아직 내용이 없어요.'}</small></span><time>{formatDate(doc.updated)}</time></button><span className={`visibility ${doc.visibility==='링크 공개'?'public':''}`}>{doc.visibility}</span><button className="row-more" title="삭제" onClick={()=>deleteDoc(doc)}><MoreHorizontal size={18}/></button></article>)}</div> : <div className="empty-state"><span className="empty-icon"><FilePlus2 size={22}/></span><h3>아직 이 폴더에 글이 없어요</h3><p>첫 문장을 적어볼까요?</p><button className="button button-outline" onClick={newDoc}><Plus size={16}/>글 작성하기</button></div>}
+          {visibleDocs.length ? <div className="doc-list">{visibleDocs.map(doc => { const uploaded = doc.uploaded ?? doc.visibility !== '비공개'; return <article className="doc-row" key={doc.id}><button className="doc-main" onClick={()=>openDocFromList(doc)}><span className="doc-icon"><FileText size={18}/></span><span className="doc-copy"><strong>{doc.title || '제목 없음'}</strong><small>{countChars(doc.body).slice(0,68) || '아직 내용이 없어요.'}</small></span><time>{formatDate(doc.updated)}</time></button>{uploaded && <span className={`visibility ${doc.visibility==='링크 공개'?'public':''}`}>{doc.visibility}</span>}<div className="row-menu-wrap"><button className="row-more" title="글 메뉴" aria-label={`${doc.title} 글 메뉴`} aria-expanded={openDocMenu===doc.id} onClick={()=>setOpenDocMenu(value=>value===doc.id?null:doc.id)}><MoreHorizontal size={18}/></button>{openDocMenu===doc.id&&<div className="row-menu">{uploaded&&<button onClick={()=>editDoc(doc)}>수정하기</button>}<button className="danger" onClick={()=>{setOpenDocMenu(null);deleteDoc(doc)}}>삭제하기</button></div>}</div></article>; })}</div> : <div className="empty-state"><span className="empty-icon"><FilePlus2 size={22}/></span><h3>아직 이 폴더에 글이 없어요</h3><p>첫 문장을 적어볼까요?</p><button className="button button-outline" onClick={newDoc}><Plus size={16}/>글 작성하기</button></div>}
         </section>
       </div>
       <div className="home-footer"><span>WRITE BY WRITING</span><span>오늘도 당신의 문장을 응원해요.</span></div>
     </section>}
 
     {view === 'editor' && <section className="editor-page">
-      <div className="editor-top"><button className="back-link" onClick={()=>{clearTimeout(timerRef.current);saveDraft();setView('library')}}><ArrowLeft size={17}/>내 서재</button><div className="editor-breadcrumb">{folderLabel(data.folders.find(f=>f.id===currentDoc?.folder))}<ChevronRight size={14}/><span>{draft.title || '새 글'}</span></div><div className="editor-user"><span className="save-label"><i className={saveState==='저장됨'?'saved':''}/>{saveState}</span></div></div>
-      <div className="toolbar"><div className="tool-group"><label className="select-wrap"><select value={draft.page} onChange={e=>changeDraft('page',e.target.value)}><option>A4</option><option>A5</option><option>Letter</option></select><ChevronDown size={13}/></label><button className="toolbar-text" onClick={()=>setModal('layout')}>레이아웃</button></div><span className="tool-divider"/><div className="tool-group"><label className="select-wrap font-select"><select value={draft.font} onChange={e=>changeDraft('font',e.target.value)}><option>Pretendard</option><option>Georgia</option><option>바탕</option><option>맑은 고딕</option><option>serif</option></select><ChevronDown size={13}/></label><label className="numeric-toolbar"><input type="number" min="1" max="72" step="1" aria-label="글자 크기" onMouseDown={rememberEditorSelection} value={draft.size} onChange={e=>changeFontSize(Number(e.target.value))}/><span>pt</span></label><label className="icon-button color-picker-button" title="글자색" onMouseDown={rememberEditorSelection}><span className="color-dot" style={{background:draft.color}}/><input id="color-picker" className="hidden-input" aria-label="글자색 선택" type="color" value={draft.color} onChange={e=>applyTextColor(e.target.value)}/></label></div><span className="tool-divider"/><div className="tool-group"><IconButton title="굵게" onClick={()=>exec('bold')}><Bold size={17}/></IconButton><IconButton title="기울임" onClick={()=>exec('italic')}><Italic size={17}/></IconButton><IconButton title="밑줄" onClick={()=>exec('underline')}><Underline size={17}/></IconButton></div><span className="tool-divider"/><div className="tool-group"><IconButton title="왼쪽 정렬" onClick={()=>exec('justifyLeft')}><AlignLeft size={17}/></IconButton><IconButton title="가운데 정렬" onClick={()=>exec('justifyCenter')}><AlignCenter size={17}/></IconButton><IconButton title="오른쪽 정렬" onClick={()=>exec('justifyRight')}><AlignRight size={17}/></IconButton></div><span className="tool-divider"/><div className="tool-group layout-tweaks"><button className="toolbar-text" onClick={()=>setModal('layout')}>자간 · 줄 간격</button></div><div className="toolbar-spacer"/><button className="button button-light share-button" onClick={()=>setModal('upload')}><Share2 size={15}/>업로드</button><button className="button button-dark export-button" onClick={()=>setModal('export')}><Download size={15}/>내보내기</button></div>
-      <div className="writing-workspace"><div className={`paper-wrap ${draft.viewMode==='double'?'paper-wrap-double':''}`}><div className={`paper ${draft.page==='Letter'?'paper-letter':'paper-paged'} ${draft.page==='A5'?'paper-a5':draft.page==='Letter'?'paper-letter-size':'paper-a4'} ${draft.viewMode==='double'?'paper-spread':''}`} style={paperStyle(draft)}><div ref={editorRef} className="prose-editor" contentEditable suppressContentEditableWarning onInput={onBodyInput} onMouseUp={rememberEditorSelection} onKeyUp={rememberEditorSelection} data-placeholder="이곳에서 글을 시작하세요." /></div></div><aside className="writing-side"><div className="side-card"><span className="eyebrow">WORD COUNT</span><strong className="word-number">{countChars(draft.body).length.toLocaleString('ko-KR')}</strong><div className="count-line"><span>공백 포함</span><b>{countChars(draft.body).length.toLocaleString('ko-KR')}</b></div><div className="count-line"><span>공백 제외</span><b>{countChars(draft.body).replace(/\s/g,'').length.toLocaleString('ko-KR')}</b></div></div><div className="side-card"><span className="eyebrow">DOCUMENT</span><div className="doc-meta"><span>폴더</span><b>{folderLabel(data.folders.find(f=>f.id===currentDoc?.folder))}</b></div><div className="doc-meta"><span>용지</span><b>{draft.page}</b></div><div className="doc-meta"><span>최근 저장</span><b>{saveState==='저장됨'?'방금 전':'저장 중'}</b></div></div><button className="side-link" onClick={()=>setModal('upload')}><Share2 size={15}/> 글 공유하기 <ChevronRight size={15}/></button></aside></div>
+      <div className="editor-top"><button className="back-link" onClick={()=>{clearTimeout(timerRef.current);saveDraft();setView('library')}}><ArrowLeft size={17}/>내 서재</button><div className="editor-breadcrumb">{folderLabel(data.folders.find(f=>f.id===draftFolder))}<ChevronRight size={14}/><span>{draft.title || '새 글'}</span></div><div className="editor-user"><span className="save-label"><i className={saveState==='저장됨'?'saved':''}/>{saveState}</span></div></div>
+      <div className="toolbar"><div className="tool-group"><label className="select-wrap"><select value={draft.page} onChange={e=>changeDraft('page',e.target.value)}><option>A4</option><option>A5</option><option>Letter</option></select><ChevronDown size={13}/></label><button className="toolbar-text" onClick={()=>setModal('layout')}>레이아웃</button></div><span className="tool-divider"/><div className="tool-group"><label className="select-wrap font-select"><select value={draft.font} onMouseDown={rememberEditorSelection} onChange={e=>changeFont(e.target.value)}><option>Pretendard</option><option>Georgia</option><option>바탕</option><option>맑은 고딕</option><option>serif</option></select><ChevronDown size={13}/></label><label className="numeric-toolbar"><input type="number" min="1" max="72" step="1" aria-label="글자 크기" onMouseDown={rememberEditorSelection} value={draft.size} onChange={e=>changeFontSize(Number(e.target.value))}/><span>pt</span></label><label className="icon-button color-picker-button" title="글자색" onMouseDown={rememberEditorSelection}><span className="color-dot" style={{background:draft.color}}/><input id="color-picker" className="hidden-input" aria-label="글자색 선택" type="color" value={draft.color} onChange={e=>applyTextColor(e.target.value)}/></label></div><span className="tool-divider"/><div className="tool-group"><IconButton title="굵게" onClick={()=>exec('bold')}><Bold size={17}/></IconButton><IconButton title="기울임" onClick={()=>exec('italic')}><Italic size={17}/></IconButton><IconButton title="밑줄" onClick={()=>exec('underline')}><Underline size={17}/></IconButton></div><span className="tool-divider"/><div className="tool-group"><IconButton title="왼쪽 정렬" onClick={()=>exec('justifyLeft')}><AlignLeft size={17}/></IconButton><IconButton title="가운데 정렬" onClick={()=>exec('justifyCenter')}><AlignCenter size={17}/></IconButton><IconButton title="오른쪽 정렬" onClick={()=>exec('justifyRight')}><AlignRight size={17}/></IconButton></div><span className="tool-divider"/><div className="tool-group layout-tweaks"><button className="toolbar-text" onClick={()=>setModal('layout')}>자간 · 줄 간격</button></div><div className="toolbar-spacer"/><button className="button button-light share-button" onClick={()=>setModal('upload')}><Share2 size={15}/>업로드</button><button className="button button-dark export-button" onClick={()=>setModal('export')}><Download size={15}/>내보내기</button></div>
+      <div className="writing-workspace"><div className={`paper-wrap ${draft.viewMode==='double'?'paper-wrap-double':''}`}><div className={`paper ${draft.page==='Letter'?'paper-letter':'paper-paged'} ${draft.page==='A5'?'paper-a5':draft.page==='Letter'?'paper-letter-size':'paper-a4'} ${draft.viewMode==='double'?'paper-spread':''}`} style={paperStyle(draft)}><div ref={editorRef} className="prose-editor" contentEditable suppressContentEditableWarning onInput={onBodyInput} onMouseUp={rememberEditorSelection} onKeyUp={rememberEditorSelection} data-placeholder="이곳에서 글을 시작하세요." /></div></div><aside className="writing-side"><div className="side-card"><span className="eyebrow">WORD COUNT</span><strong className="word-number">{countChars(draft.body).length.toLocaleString('ko-KR')}</strong><div className="count-line"><span>공백 포함</span><b>{countChars(draft.body).length.toLocaleString('ko-KR')}</b></div><div className="count-line"><span>공백 제외</span><b>{countChars(draft.body).replace(/\s/g,'').length.toLocaleString('ko-KR')}</b></div></div><div className="side-card"><span className="eyebrow">DOCUMENT</span><div className="doc-meta"><span>폴더</span><b>{folderPath(draftFolder)}</b></div><div className="doc-meta"><span>용지</span><b>{draft.page}</b></div><div className="doc-meta"><span>최근 저장</span><b>{saveState==='저장됨'?'방금 전':'저장 중'}</b></div></div><button className="side-link" onClick={()=>setModal('upload')}><Share2 size={15}/> 글 공유하기 <ChevronRight size={15}/></button></aside></div>
       <footer className="editor-footer"><span><span className="save-mini"/> {saveState}</span><span>{countChars(draft.body).length.toLocaleString('ko-KR')}자</span><span>{formatDate(currentDoc?.updated || Date.now())}</span></footer>
     </section>}
 
-    {profileOpen && <><div className="drawer-scrim" onClick={()=>setProfileOpen(false)}/><aside className="profile-drawer"><header className="drawer-head"><span className="eyebrow">ACCOUNT</span><IconButton title="닫기" onClick={()=>setProfileOpen(false)}><X size={18}/></IconButton></header><button className="settings-shortcut" aria-label="설정" onClick={()=>{setProfileOpen(false);setSettingsOpen(true)}}><Settings size={18}/></button><div className="profile-summary"><div className="profile-avatar">{(data.prefs.nickname || 'W').slice(0,1)}</div><h2>{data.prefs.nickname}</h2><p>{authUser?.email || '로컬 미리보기 계정'}</p><span className="profile-tag">WBW WRITER</span></div><div className="drawer-rule"/><button className="drawer-link" onClick={()=>{setProfileOpen(false);setView('library')}}><BookOpen size={18}/><span>내 서재</span><ChevronRight size={16}/></button><button className="drawer-link" onClick={()=>{setProfileOpen(false);setSettingsOpen(true)}}><Settings size={18}/><span>환경 설정</span><ChevronRight size={16}/></button><div className="drawer-bottom"><p>나만의 문장을 쓰는 공간</p><button className="logout-button" onClick={doSignOut}><LogOut size={16}/>로그아웃</button></div></aside></>}
+    {profileOpen && <><div className="drawer-scrim" onClick={()=>setProfileOpen(false)}/><aside className="profile-drawer"><header className="drawer-head"><span className="eyebrow">ACCOUNT</span><IconButton title="닫기" onClick={()=>setProfileOpen(false)}><X size={18}/></IconButton></header><div className="profile-summary"><div className="profile-avatar">{(data.prefs.nickname || 'W').slice(0,1)}</div><h2>{data.prefs.nickname}</h2><p>{authUser?.email || '로컬 미리보기 계정'}</p><span className="profile-tag">WBW WRITER</span></div><div className="drawer-rule"/><button className="drawer-link" onClick={()=>{setProfileOpen(false);setView('library')}}><BookOpen size={18}/><span>내 서재</span><ChevronRight size={16}/></button><button className="drawer-link" onClick={()=>{setProfileOpen(false);setSettingsOpen(true)}}><Settings size={18}/><span>환경 설정</span><ChevronRight size={16}/></button><div className="drawer-bottom"><p>나만의 문장을 쓰는 공간</p><button className="logout-button" onClick={doSignOut}><LogOut size={16}/>로그아웃</button></div></aside></>}
 
-    {settingsOpen && <Modal title="환경 설정" close={()=>setSettingsOpen(false)} wide><div className="settings-body"><section className="settings-section"><div><h3>테마 색상</h3><p>서재의 분위기를 선택해요.</p></div><div className="theme-options">{[['sky','하늘','#dceefa'],['white','하양','#fff'],['black','검정','#292929'],['gray','회색','#d6d6d6'],['sand','베이지','#eee6d9']].map(([id,label,color])=><button className={`theme-option ${data.prefs.theme===id?'chosen':''}`} key={id} onClick={()=>updatePrefs('theme',id)}><i style={{background:color}}/><span>{label}</span></button>)}</div></section><section className="settings-section"><div><h3>기본 글꼴</h3><p>편집기에 사용할 글꼴을 설정해요.</p></div><select className="settings-select" value={data.prefs.font} onChange={e=>updatePrefs('font',e.target.value)}><option>Pretendard</option><option>Georgia</option><option>바탕</option><option>맑은 고딕</option><option>serif</option></select></section><section className="settings-section"><div><h3>닉네임</h3><p>서재에 표시될 이름이에요.</p></div><div className="nickname-controls"><input value={data.prefs.nickname} onChange={e=>updatePrefs('nickname',e.target.value)} maxLength={24}/><button className="button button-outline" onClick={()=>updatePrefs('nickname',randomNames[Math.floor(Math.random()*randomNames.length)])}><Sparkles size={15}/>랜덤</button></div></section><section className="danger-zone"><div><h3>계정 탈퇴</h3><p>탈퇴하면 계정과 업로드한 글이 모두 삭제됩니다.</p></div><button className="button button-danger" onClick={()=>setModal('delete-account')}><Trash2 size={15}/>계정 탈퇴</button></section></div><div className="modal-footer"><button className="button button-dark" onClick={()=>setSettingsOpen(false)}>완료</button></div></Modal>}
+    {settingsOpen && <Modal title="환경 설정" close={()=>setSettingsOpen(false)} wide><div className="settings-body"><section className="settings-section"><div><h3>테마 색상</h3><p>서재의 분위기를 선택해요.</p></div><div className="theme-options">{[['sky','하늘','#dceefa'],['white','하양','#fff'],['black','검정','#292929'],['gray','회색','#d6d6d6'],['sand','베이지','#eee6d9']].map(([id,label,color])=><button className={`theme-option ${data.prefs.theme===id?'chosen':''}`} key={id} onClick={()=>updatePrefs('theme',id)}><i style={{background:color}}/><span>{label}</span></button>)}</div></section><section className="settings-section"><div><h3>기본 글꼴</h3><p>편집기에 사용할 글꼴을 설정해요.</p></div><select className="settings-select" value={data.prefs.font} onChange={e=>updatePrefs('font',e.target.value)}><option>Pretendard</option><option>Georgia</option><option>바탕</option><option>맑은 고딕</option><option>serif</option></select></section><section className="settings-section"><div><h3>닉네임</h3><p>서재에 표시될 이름이에요.</p></div><div className="nickname-controls"><input value={data.prefs.nickname} onChange={e=>updatePrefs('nickname',e.target.value)} onBlur={persistNickname} maxLength={24}/><button className="button button-outline" onClick={()=>updatePrefs('nickname',randomNames[Math.floor(Math.random()*randomNames.length)])}><Sparkles size={15}/>랜덤</button></div></section><section className="danger-zone"><div><h3>계정 탈퇴</h3><p>탈퇴하면 계정과 업로드한 글이 모두 삭제됩니다.</p></div><button className="button button-danger" onClick={()=>setModal('delete-account')}><Trash2 size={15}/>계정 탈퇴</button></section></div><div className="modal-footer"><button className="button button-dark" onClick={()=>setSettingsOpen(false)}>완료</button></div></Modal>}
 
     {modal==='layout' && <Modal title="문서 레이아웃" close={()=>setModal('')}><div className="layout-form"><label>용지 크기<select value={draft.page} onChange={e=>changeDraft('page',e.target.value)}><option>A4</option><option>A5</option><option>Letter</option></select></label><PagePreview draft={draft}/><div className="page-view-control"><span>페이지 보기</span><div><button type="button" className={draft.viewMode==='single'?'selected':''} onClick={()=>changeDraft('viewMode','single')}>단면 보기</button><button type="button" className={draft.viewMode==='double'?'selected':''} onClick={()=>changeDraft('viewMode','double')}>양면 보기</button></div></div><fieldset className="margin-settings"><legend>여백</legend><div className="margin-grid">{[['marginTop','위쪽'],['marginRight','오른쪽'],['marginBottom','아래쪽'],['marginLeft','왼쪽']].map(([key,label])=><label className="number-setting" key={key}>{label}<span className="number-input-wrap"><input type="number" min="0" max="100" step="1" value={draft[key]} onChange={e=>changeDraft(key,Number(e.target.value))}/><small>mm</small></span></label>)}</div></fieldset><label className="number-setting">자간<span className="number-input-wrap"><input type="number" min="-1" max="10" step="0.1" value={draft.spacing} onChange={e=>changeDraft('spacing',Number(e.target.value))}/><small>px</small></span></label><label className="number-setting">줄 간격<span className="number-input-wrap"><input type="number" min="0.8" max="3" step="0.1" value={draft.line} onChange={e=>changeDraft('line',Number(e.target.value))}/><small>배</small></span></label><p className="form-note">글꼴은 이 기기에서 사용할 수 있는 글꼴을 기준으로 표시됩니다.</p></div><div className="modal-footer modal-footer-between"><button className="button button-outline" onClick={resetLayout}>기본값으로 초기화</button><button className="button button-dark" onClick={()=>setModal('')}>적용</button></div></Modal>}
 
-    {modal==='upload' && <Modal title="글 업로드" close={()=>{setModal('');setPasswordDraft('')}}><div className="upload-form"><label>글 제목<input value={draft.title} onChange={e=>changeDraft('title',e.target.value)} placeholder="제목을 입력해 주세요"/></label><label>공개 설정<select value={draft.visibility || '비공개'} onChange={e=>{changeDraft('visibility',e.target.value);if(e.target.value!=='비밀번호 보호')setPasswordDraft('')}}><option>비공개</option><option>링크 공개</option><option>비밀번호 보호</option></select></label>{draft.visibility==='비밀번호 보호'&&<label>열람 비밀번호<input type="password" autoComplete="new-password" value={passwordDraft} onChange={e=>setPasswordDraft(e.target.value)} placeholder="비밀번호를 입력해 주세요"/></label>}<label className={`check-row ${draft.scheduleEnabled?'schedule-enabled':''}`}><input type="checkbox" checked={draft.scheduleEnabled} onChange={e=>changeDraft('scheduleEnabled',e.target.checked)}/> 예약 업로드 사용</label><label className={`schedule-time ${draft.scheduleEnabled?'schedule-enabled':''}`}>예약 시간<input type="datetime-local" min={toLocalDateTime(new Date())} value={draft.scheduledAt} onChange={e=>changeDraft('scheduledAt',e.target.value)} disabled={!draft.scheduleEnabled}/></label><div className="share-link-box"><Link2 size={16}/><span>{window.location.origin}/share/{selectedDoc?.slice(0,8) || '문서링크'}</span><button onClick={shareDoc}>복사</button></div><p className="form-note">링크 공유와 비밀번호 검증은 백엔드 권한 설정이 필요합니다.</p></div><div className="modal-footer"><button className="button button-dark" onClick={()=>{if(!hasBodyContent(draft.body)){setNotice('본문이 비어 있는 글은 저장하거나 업로드할 수 없어요.');return;}if(draft.visibility==='비밀번호 보호'&&!passwordDraft.trim()){setNotice('열람 비밀번호를 입력해 주세요.');return;}if(draft.scheduleEnabled&&(!draft.scheduledAt||new Date(draft.scheduledAt)<=new Date())){setNotice('예약 업로드는 현재보다 이후의 시간을 선택해 주세요.');return;}saveDraft();setModal('');setPasswordDraft('');setNotice(draft.scheduleEnabled?'예약 설정을 저장했어요.':'현재 공개 설정을 저장했어요.')}}>저장하기</button></div></Modal>}
+    {modal==='upload' && <Modal title="글 업로드" close={()=>{setModal('');setPasswordDraft('')}}><div className="upload-form"><label>글 제목<input value={draft.title} onChange={e=>changeDraft('title',e.target.value)} placeholder="제목을 입력해 주세요"/></label><label>공개 설정<select value={draft.visibility || '비공개'} onChange={e=>{changeDraft('visibility',e.target.value);if(e.target.value!=='비밀번호 보호')setPasswordDraft('')}}><option>비공개</option><option>링크 공개</option><option>비밀번호 보호</option></select></label>{draft.visibility==='비밀번호 보호'&&<label>열람 비밀번호<input type="password" autoComplete="new-password" value={passwordDraft} onChange={e=>setPasswordDraft(e.target.value)} placeholder="비밀번호를 입력해 주세요"/></label>}<label className={`check-row ${draft.scheduleEnabled?'schedule-enabled':''}`}><input type="checkbox" checked={draft.scheduleEnabled} onChange={e=>changeDraft('scheduleEnabled',e.target.checked)}/> 예약 업로드 사용</label><label className={`schedule-time ${draft.scheduleEnabled?'schedule-enabled':''}`}>예약 시간<input type="datetime-local" min={toLocalDateTime(new Date())} value={draft.scheduledAt} onChange={e=>changeDraft('scheduledAt',e.target.value)} disabled={!draft.scheduleEnabled}/></label><div className="share-link-box"><Link2 size={16}/><span>{window.location.origin}/share/{selectedDoc || '문서링크'}</span><button onClick={shareDoc}>복사</button></div><p className="form-note">공개 링크와 비밀번호 확인은 실제 공유 배포 시 백엔드 권한 검증이 필요합니다.</p></div><div className="modal-footer"><button className="button button-dark" onClick={saveUpload}>저장하기</button></div></Modal>}
 
     {modal==='export' && <Modal title="문서 내보내기" close={()=>setModal('')} wide><div className="export-content"><div className="preview-area"><div className="preview-paper"><span className="preview-top">WBW · {draft.page}</span>{draft.title && <h3>{draft.title}</h3>}<div className="preview-text">{countChars(draft.body).slice(0,280) || '작성한 내용이 여기에 미리 표시됩니다.'}</div><span className="preview-page">1</span></div><span className="preview-caption">1쪽 미리보기</span></div><div className="export-options"><span className="eyebrow">FILE FORMAT</span><button onClick={exportPdf}><span className="format-icon"><Printer size={18}/></span><span><b>PDF 문서</b><small>인쇄 대화상자에서 PDF로 저장</small></span><ChevronRight size={17}/></button><button onClick={exportText}><span className="format-icon"><FileText size={18}/></span><span><b>텍스트 파일</b><small>UTF-8 텍스트로 다운로드</small></span><ChevronRight size={17}/></button><button onClick={()=>exportImage('png')}><span className="format-icon"><FileImage size={18}/></span><span><b>PNG 이미지</b><small>첫 페이지를 이미지로 저장</small></span><ChevronRight size={17}/></button><button onClick={()=>exportImage('jpeg')}><span className="format-icon"><FileImage size={18}/></span><span><b>JPEG 이미지</b><small>첫 페이지를 이미지로 저장</small></span><ChevronRight size={17}/></button><p className="form-note">이미지 내보내기는 첫 페이지 기준입니다. 여러 쪽 PDF는 브라우저 인쇄 기능을 사용합니다.</p></div></div></Modal>}
 
     {modal==='delete-account' && <Modal title="계정 탈퇴" close={()=>{setModal('');setDeleteConfirmName('')}}><div className="delete-warning"><div className="warning-icon"><Trash2 size={20}/></div><h3>정말 탈퇴하시겠어요?</h3><p>탈퇴하면 계정과 업로드한 글이 모두 삭제되며 되돌릴 수 없습니다.</p><label>확인을 위해 닉네임을 입력해 주세요<input value={deleteConfirmName} placeholder={data.prefs.nickname} onChange={e=>setDeleteConfirmName(e.target.value)}/></label></div><div className="modal-footer"><button className="button button-outline" onClick={()=>{setModal('');setDeleteConfirmName('')}}>취소</button><button className="button button-danger" disabled={deleteConfirmName!==data.prefs.nickname} onClick={()=>setNotice('계정 삭제는 실제 인증·서버 연동 후 활성화됩니다.')}>영구 삭제</button></div></Modal>}
 
-    {notice && <div className="toast"><Check size={16}/>{notice}<button onClick={()=>setNotice('')}><X size={14}/></button></div>}
+    {dialog && <Modal title={dialog.title} close={()=>closeDialog(false)}><div className="confirm-dialog-copy"><p>{dialog.message}</p>{dialog.type==='prompt'&&<input className="dialog-input" autoFocus value={dialogInput} onChange={event=>setDialogInput(event.target.value)} onKeyDown={event=>{if(event.key==='Enter'){event.preventDefault();closeDialog(true);}}} placeholder="폴더 이름"/>}</div><div className="modal-footer"><button className="button button-outline" onClick={()=>closeDialog(false)}>취소</button><button className={`button ${dialog.danger?'button-danger':'button-dark'}`} onClick={()=>closeDialog(true)}>{dialog.confirmLabel || '확인'}</button></div></Modal>}
+
+    {notice && <div className="notice-veil" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)setNotice('')}}><section className="notice-dialog" role="alertdialog" aria-modal="true" aria-live="assertive"><div className="notice-icon"><Check size={18}/></div><p>{notice}</p><button className="button button-dark" onClick={()=>setNotice('')}>확인</button></section></div>}
+    {toastNotice && <div className="toast"><Check size={16}/>{toastNotice}</div>}
     <style>{`@media print{@page{size:${draft.page};margin:${draft.marginTop}mm ${draft.marginRight}mm ${draft.marginBottom}mm ${draft.marginLeft}mm}}`}</style>
     <div className="print-only" style={{ ...paperStyle(draft), '--export-background': exportPalette.background, '--export-foreground': exportTextColor }}>{draft.title && <h1>{draft.title}</h1>}<div dangerouslySetInnerHTML={{__html:draft.body}} /></div>
   </main>;
@@ -464,7 +629,7 @@ function LoginScreen({ configured, loading, error, success, onGoogle, onEmail, o
 
 function GoogleMark() { return <span className="google-mark" aria-hidden="true">G</span>; }
 
-function FolderTree({ folder, all, active, setActive, docs, rename }) {
+function FolderTree({ folder, all, active, setActive, docs, rename, deleteMode, removeFolder, moveFolder }) {
   const nested = all.filter(f => f.parent === folder.id);
   const count = docs.filter(d => d.folder === folder.id).length;
   const [expanded, setExpanded] = useState(true);
@@ -472,13 +637,13 @@ function FolderTree({ folder, all, active, setActive, docs, rename }) {
   const [editName, setEditName] = useState(folder.name);
   function saveName() { setEditing(false); if (editName.trim() && editName.trim() !== folder.name) rename(folder, editName); }
   return <div className="folder-branch">
-    <div className={`folder-row ${active===folder.id?'selected':''}`}>
+    <div className={`folder-row ${active===folder.id?'selected':''}`} draggable={!editing} onDragStart={event=>{if(event.target.closest?.('.folder-delete')){event.preventDefault();return;}event.dataTransfer.setData('text/wbw-folder',folder.id);event.dataTransfer.effectAllowed='move';}} onDragOver={event=>{event.preventDefault();event.currentTarget.classList.add('drop-target');}} onDragLeave={event=>event.currentTarget.classList.remove('drop-target')} onDrop={event=>{event.preventDefault();event.stopPropagation();event.currentTarget.classList.remove('drop-target');const draggedId=event.dataTransfer.getData('text/wbw-folder');if(draggedId){setExpanded(true);moveFolder(draggedId,folder.id);}}}>
       <button type="button" className="folder-disclosure" disabled={!nested.length} aria-label={expanded?'하위 폴더 접기':'하위 폴더 펼치기'} onClick={()=>setExpanded(value=>!value)}><Folder size={17}/></button>
       <button type="button" className="folder-select" onClick={()=>!editing && setActive(folder.id)}>
         {editing ? <input className="folder-name-input" autoFocus value={editName} onChange={e=>setEditName(e.target.value)} onBlur={saveName} onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur();if(e.key==='Escape'){setEditName(folder.name);setEditing(false)}}}/> : <span onDoubleClick={e=>{e.stopPropagation();setEditName(folder.name);setEditing(true)}} title="더블클릭해서 이름 바꾸기">{folder.name}</span>}
-        <small>{count}</small>
       </button>
+      {deleteMode ? <button type="button" className="folder-delete" aria-label={`${folder.name} 폴더 삭제`} title="폴더와 하위 폴더 삭제" onClick={event=>{event.stopPropagation();removeFolder(folder);}}><Minus size={17}/></button> : <small className="folder-count">{count}</small>}
     </div>
-    {expanded && nested.map(child=><div className="nested-folder" key={child.id}><FolderTree folder={child} all={all} active={active} setActive={setActive} docs={docs} rename={rename}/></div>)}
+    {expanded && nested.map(child=><div className="nested-folder" key={child.id}><FolderTree folder={child} all={all} active={active} setActive={setActive} docs={docs} rename={rename} deleteMode={deleteMode} removeFolder={removeFolder} moveFolder={moveFolder}/></div>)}
   </div>;
 }
