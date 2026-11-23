@@ -40,6 +40,14 @@ const formatDate = value => new Intl.DateTimeFormat('ko-KR', { month: 'long', da
 const toLocalDateTime = value => { const local = new Date(value.getTime() - value.getTimezoneOffset() * 60000); return local.toISOString().slice(0, 16); };
 const countChars = html => (html || '').replace(/<[^>]+>/g, '').replaceAll('&nbsp;', ' ').replaceAll('&amp;', '&').replaceAll('&lt;', '<').replaceAll('&gt;', '>');
 const hasBodyContent = html => countChars(html).replace(/[\s\u200b\ufeff]/g, '').length > 0;
+const classifyFailure = error => {
+  const status = error?.status ?? error?.statusCode;
+  const message = String(error?.message || error || '');
+  if (status === 403) return 'forbidden';
+  if (status >= 500) return 'server';
+  if (error?.name === 'AuthRetryableFetchError' || /fetch|network|timeout|connection|offline/i.test(message)) return 'offline';
+  return null;
+};
 const pageSizes = {
   A4: { width: 210, height: 297, label: '210 × 297 mm' },
   A5: { width: 148, height: 210, label: '148 × 210 mm' },
@@ -72,6 +80,27 @@ function IconButton({ title, onClick, children, active = false, className = '' }
 function Modal({ title, close, children, wide = false }) {
   return <div className="veil" onMouseDown={e => e.target === e.currentTarget && close()}><section className={`modal ${wide ? 'modal-wide' : ''}`} role="dialog" aria-modal="true"><header className="modal-head"><h2>{title}</h2><IconButton title="닫기" onClick={close}><X size={18}/></IconButton></header>{children}</section></div>;
 }
+function ErrorScreen({ kind, themeClass, font, onHome, onRetry }) {
+  const content = {
+    'not-found': { label: '404 NOT FOUND', title: '앗! 페이지를 찾을 수 없어요.', description: '주소가 바뀌었거나 삭제된 페이지일 수 있어요.' },
+    server: { label: 'SERVER ERROR', title: '앗! 서버에 문제가 생겼어요.', description: '잠시 후 다시 시도해 주세요.' },
+    forbidden: { label: '403 FORBIDDEN', title: '앗! 접근 권한이 없어요.', description: '로그인하거나 글쓴이에게 열람 권한을 요청해 주세요.' },
+    offline: { label: 'OFFLINE', title: '앗! 인터넷 연결이 끊겼어요.', description: '인터넷 연결을 확인한 뒤 다시 시도해 주세요.' }
+  }[kind] || { label: 'ERROR', title: '앗! 문제가 발생했어요.', description: '잠시 후 다시 시도해 주세요.' };
+  const canRetry = kind === 'server' || kind === 'offline';
+  return <main className={`app-shell error-screen ${themeClass}`} style={{ '--app-font': font }}>
+    <section className="error-content" role="alert">
+      <div className="error-mark" aria-hidden="true">!</div>
+      <span className="eyebrow">WBW · {content.label}</span>
+      <h1>{content.title}</h1>
+      <p>{content.description}</p>
+      <div className="error-actions">
+        {canRetry && <button className="button button-outline" onClick={onRetry}>다시 시도</button>}
+        <button className="button button-dark" onClick={onHome}>처음으로</button>
+      </div>
+    </section>
+  </main>;
+}
 function PagePreview({ draft }) {
   const size = pageSizes[draft.page] || pageSizes.A4;
   const margins = {
@@ -99,6 +128,7 @@ export default function App() {
   const [previewMode, setPreviewMode] = useState(false);
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState('');
+  const [fatalError, setFatalError] = useState(null);
   const [authSuccess, setAuthSuccess] = useState('');
   const [activeFolder, setActiveFolder] = useState('f2');
   const [sortMode, setSortMode] = useState('modified');
@@ -141,7 +171,16 @@ export default function App() {
       if (!active) return;
       setAuthUser(session?.user || null);
       syncUserNickname(session?.user || null);
-      if (error) setAuthError(error.message);
+      if (error) {
+        const failure = classifyFailure(error);
+        if (failure) setFatalError(failure);
+        else setAuthError(error.message);
+      }
+      setAuthReady(true);
+    }).catch(error => {
+      if (!active) return;
+      setFatalError(classifyFailure(error) || 'server');
+      setAuthError(error?.message || '서버에 연결할 수 없어요.');
       setAuthReady(true);
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -150,6 +189,17 @@ export default function App() {
       setAuthReady(true);
     });
     return () => { active = false; subscription.unsubscribe(); };
+  }, []);
+  useEffect(() => {
+    const handleOffline = () => setFatalError('offline');
+    const handleOnline = () => setFatalError(current => current === 'offline' ? null : current);
+    if (!window.navigator.onLine) handleOffline();
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('online', handleOnline);
+    return () => {
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('online', handleOnline);
+    };
   }, []);
   useEffect(() => {
     if (!notice) return;
@@ -275,7 +325,7 @@ export default function App() {
     setAuthError(''); setAuthSuccess('');
     if (!isSupabaseConfigured) { setAuthError('Google 로그인을 사용하려면 Supabase 프로젝트 설정이 필요해요.'); return; }
     setAuthLoading(true);
-    try { await signInWithGoogle(); } catch (e) { setAuthError(e.message || 'Google 로그인에 실패했어요.'); setAuthLoading(false); }
+    try { await signInWithGoogle(); } catch (e) { const failure = classifyFailure(e); if (failure) setFatalError(failure); else setAuthError(e.message || 'Google 로그인에 실패했어요.'); setAuthLoading(false); }
   }
   async function handleEmailAuth({ mode, email, password }) {
     setAuthError(''); setAuthSuccess('');
@@ -299,7 +349,7 @@ export default function App() {
         setAuthUser(result.user);
         syncUserNickname(result.user);
       }
-    } catch (e) { setAuthError(e.message || '요청을 완료하지 못했어요.'); }
+    } catch (e) { const failure = classifyFailure(e); if (failure) setFatalError(failure); else setAuthError(e.message || '요청을 완료하지 못했어요.'); }
     finally { setAuthLoading(false); }
   }
   function doSignOut() {
@@ -315,6 +365,15 @@ export default function App() {
   const themeClass = data.prefs.theme === 'black' ? 'theme-black' : data.prefs.theme === 'sky' ? 'theme-sky' : data.prefs.theme === 'sand' ? 'theme-sand' : data.prefs.theme === 'gray' ? 'theme-gray' : '';
   const exportPalette = themePalettes[data.prefs.theme] || themePalettes.mono;
   const exportTextColor = draft.color?.toLowerCase() === '#252525' ? exportPalette.foreground : draft.color;
+  const routePath = window.location.pathname.replace(/\/+$/, '') || '/';
+  const knownErrorPath = ['/403', '/500', '/offline'].includes(routePath);
+  const showNotFound = routePath !== '/' && routePath !== '/index.html' && !knownErrorPath;
+
+  if (routePath === '/403') return <ErrorScreen kind="forbidden" themeClass={themeClass} font={data.prefs.font} onHome={() => window.location.assign('/')}/>;
+  if (routePath === '/500') return <ErrorScreen kind="server" themeClass={themeClass} font={data.prefs.font} onHome={() => window.location.assign('/')} onRetry={() => window.location.reload()}/>;
+  if (routePath === '/offline') return <ErrorScreen kind="offline" themeClass={themeClass} font={data.prefs.font} onHome={() => window.location.assign('/')} onRetry={() => window.location.reload()}/>;
+  if (showNotFound) return <ErrorScreen kind="not-found" themeClass={themeClass} font={data.prefs.font} onHome={() => window.location.assign('/')}/>;
+  if (fatalError) return <ErrorScreen kind={fatalError} themeClass={themeClass} font={data.prefs.font} onHome={() => window.location.assign('/')} onRetry={() => window.location.reload()}/>;
 
   if (!authReady) return <main className={`app-shell login-shell ${themeClass}`}><div className="auth-loading"><span className="brand-mark">w.</span><span>WBW를 준비하고 있어요</span></div></main>;
   if (!authUser && !previewMode) return <LoginScreen
