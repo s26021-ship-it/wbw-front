@@ -4,12 +4,12 @@ import './login.css';
 import {
   AlignCenter, AlignLeft, AlignRight, ArrowDown, ArrowLeft, ArrowUpDown,
   Bold, BookOpen, Check, ChevronDown, ChevronRight, ChevronsUpDown,
-  CircleHelp, Clock3, Download, FileImage, FilePlus2, FileText, Folder,
+  CircleHelp, Clock3, Download, FilePlus2, FileText, Folder,
   FolderPlus, Italic, Link2, LogOut, Menu, Minus, MoreHorizontal, PanelLeftClose,
   Plus, Printer, Search, Settings, Share2, SlidersHorizontal, Sparkles,
   Trash2, Underline, X
 } from 'lucide-react';
-import { isSupabaseConfigured, signInWithGoogle, signOut, supabase } from './backend.js';
+import { getCurrentUser, startGoogleLogin, signOut } from './backend.js';
 
 const initial = {
   folders: [
@@ -158,7 +158,7 @@ function ReadDocument({ doc, theme, onBack, isShared, viewerNickname = '말하�
 export default function App() {
   const [data, setData] = useState(loadData);
   const [authUser, setAuthUser] = useState(null);
-  const [authReady, setAuthReady] = useState(!isSupabaseConfigured);
+  const [authReady, setAuthReady] = useState(false);
   const [previewMode, setPreviewMode] = useState(false);
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState('');
@@ -201,38 +201,24 @@ export default function App() {
     if (!user) { nicknameUserIdRef.current = null; return; }
     if (nicknameUserIdRef.current === user.id) return;
     nicknameUserIdRef.current = user.id;
-    const savedNickname = user.user_metadata?.nickname?.trim();
-    const nickname = savedNickname || randomNames[Math.floor(Math.random() * randomNames.length)];
-    setData(current => ({ ...current, prefs: { ...current.prefs, nickname } }));
-    if (!savedNickname && supabase) supabase.auth.updateUser({ data: { nickname } }).catch(() => {});
+    setData(current => ({ ...current, prefs: { ...current.prefs, nickname: current.prefs.nickname || randomNames[Math.floor(Math.random() * randomNames.length)] } }));
   }
 
   useEffect(() => { localStorage.setItem('wbw-data', JSON.stringify(data)); }, [data]);
   useEffect(() => {
-    if (!supabase) return;
     let active = true;
-    supabase.auth.getSession().then(({ data: { session }, error }) => {
+    getCurrentUser().then(user => {
       if (!active) return;
-      setAuthUser(session?.user || null);
-      syncUserNickname(session?.user || null);
-      if (error) {
-        const failure = classifyFailure(error);
-        if (failure) setFatalError(failure);
-        else setAuthError(error.message);
-      }
+      setAuthUser(user);
+      syncUserNickname(user);
+      if (new URLSearchParams(window.location.search).get('error') === 'oauth') setAuthError('Google 로그인에 실패했어요. 잠시 후 다시 시도해 주세요.');
       setAuthReady(true);
     }).catch(error => {
       if (!active) return;
-      setFatalError(classifyFailure(error) || 'server');
-      setAuthError(error?.message || '서버에 연결할 수 없어요.');
+      setAuthError(error?.message || '백엔드 서버에 연결할 수 없어요. 서버 실행 상태를 확인해 주세요.');
       setAuthReady(true);
     });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setAuthUser(session?.user || null);
-      syncUserNickname(session?.user || null);
-      setAuthReady(true);
-    });
-    return () => { active = false; subscription.unsubscribe(); };
+    return () => { active = false; };
   }, []);
   useEffect(() => {
     const handleOffline = () => setFatalError('offline');
@@ -277,11 +263,6 @@ export default function App() {
       prefs: { ...d.prefs, [key]: value },
       ...(key === 'nickname' ? { docs: d.docs.map(doc => ({ ...doc, authorNickname: value })) } : {})
     }));
-  }
-  async function persistNickname() {
-    if (!authUser || !supabase) return;
-    const { error } = await supabase.auth.updateUser({ data: { nickname: data.prefs.nickname } });
-    if (error) setNotice('닉네임을 계정에 저장하지 못했어요.');
   }
   function openDoc(doc) {
     const oldMargin = doc.margin ?? 24;
@@ -424,50 +405,11 @@ export default function App() {
     if (confirmed) current?.onConfirm?.(dialogInput);
     setDialogInput('');
   }
-  function exportText() {
-    const plain = countChars(draft.body); const blob = new Blob([`${draft.title}\n\n${plain}`], { type: 'text/plain;charset=utf-8' });
-    download(blob, `${draft.title || 'WBW 문서'}.txt`); setModal('');
-  }
-  function download(blob, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); URL.revokeObjectURL(a.href); }
-  function exportImage(kind) {
-    const text = countChars(draft.body); const canvas = document.createElement('canvas'); canvas.width = 1240; canvas.height = 1754;
-    const ctx = canvas.getContext('2d'); ctx.fillStyle = exportPalette.background; ctx.fillRect(0,0,canvas.width,canvas.height); ctx.fillStyle = exportTextColor; if (draft.title) { ctx.font = `bold 48px ${draft.font}`; ctx.fillText(draft.title, 120, 150); }
-    ctx.font = `${draft.size * 2}px ${draft.font}`; ctx.fillStyle = exportTextColor; ctx.textBaseline = 'top';
-    const max = canvas.width - 240; const lines = []; text.split('\n').forEach(p => { let line = ''; for (const ch of p) { if (ctx.measureText(line + ch).width > max) { lines.push(line); line = ch; } else line += ch; } lines.push(line); lines.push(''); });
-    lines.slice(0, 42).forEach((line, i) => ctx.fillText(line, 120, 240 + i * draft.size * 2.6));
-    canvas.toBlob(blob => { if (blob) download(blob, `${draft.title || 'WBW 문서'}.${kind}`); }); setModal('');
-  }
   async function exportPdf() { setModal(''); window.print(); }
-  async function handleGoogleLogin() {
+  function handleGoogleLogin() {
     setAuthError(''); setAuthSuccess('');
-    if (!isSupabaseConfigured) { setAuthError('Google 로그인을 사용하려면 Supabase 프로젝트 설정이 필요해요.'); return; }
     setAuthLoading(true);
-    try { await signInWithGoogle(); } catch (e) { const failure = classifyFailure(e); if (failure) setFatalError(failure); else setAuthError(e.message || 'Google 로그인에 실패했어요.'); setAuthLoading(false); }
-  }
-  async function handleEmailAuth({ mode, email, password }) {
-    setAuthError(''); setAuthSuccess('');
-    if (!supabase) { setAuthError('이메일 로그인을 사용하려면 Supabase URL과 키를 먼저 설정해 주세요.'); return; }
-    setAuthLoading(true);
-    try {
-      if (mode === 'reset') {
-        const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
-        if (error) throw error;
-        setAuthSuccess('비밀번호 재설정 링크를 이메일로 보냈어요.');
-      } else if (mode === 'signup') {
-        const nickname = randomNames[Math.floor(Math.random() * randomNames.length)];
-        const { data: result, error } = await supabase.auth.signUp({ email, password, options: { data: { nickname } } });
-        if (error) throw error;
-        setData(current => ({ ...current, prefs: { ...current.prefs, nickname } }));
-        if (result.session) { setAuthUser(result.user); syncUserNickname(result.user); }
-        else setAuthSuccess('인증 이메일을 보냈어요. 이메일 인증을 마치면 자동 생성된 닉네임으로 시작할 수 있어요.');
-      } else {
-        const { data: result, error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-        setAuthUser(result.user);
-        syncUserNickname(result.user);
-      }
-    } catch (e) { const failure = classifyFailure(e); if (failure) setFatalError(failure); else setAuthError(e.message || '요청을 완료하지 못했어요.'); }
-    finally { setAuthLoading(false); }
+    startGoogleLogin();
   }
   function doSignOut() {
     signOut().catch(() => {}); nicknameUserIdRef.current = null; setAuthUser(null); setPreviewMode(false); setProfileOpen(false); setView('library'); setNotice('로그아웃했어요.');
@@ -517,7 +459,7 @@ export default function App() {
   const exportPalette = themePalettes[data.prefs.theme] || themePalettes.mono;
   const exportTextColor = draft.color?.toLowerCase() === '#252525' ? exportPalette.foreground : draft.color;
   const routePath = window.location.pathname.replace(/\/+$/, '') || '/';
-  const knownErrorPath = ['/403', '/500', '/offline'].includes(routePath);
+  const knownErrorPath = ['/403', '/500', '/offline', '/login'].includes(routePath);
   const isShareRoute = /^\/share\/[^/]+\/?$/.test(window.location.pathname);
   const showNotFound = routePath !== '/' && routePath !== '/index.html' && !knownErrorPath && !isShareRoute;
 
@@ -538,10 +480,8 @@ export default function App() {
 
   if (!authReady) return <main className={`app-shell login-shell ${themeClass}`}><div className="auth-loading"><span className="brand-mark">w.</span><span>WBW를 준비하고 있어요</span></div></main>;
   if (!authUser && !previewMode) return <LoginScreen
-    configured={isSupabaseConfigured} loading={authLoading} error={authError} success={authSuccess}
-    onGoogle={handleGoogleLogin} onEmail={handleEmailAuth}
+    loading={authLoading} error={authError} startGoogleLogin={handleGoogleLogin}
     onPreview={() => { setPreviewMode(true); setAuthError(''); setAuthSuccess(''); }}
-    clearMessages={() => { setAuthError(''); setAuthSuccess(''); }}
   />;
 
   if (view === 'reader' && currentDoc) return <main className={`app-shell ${themeClass}`} style={{ '--app-font': data.prefs.font }}><ReadDocument doc={currentDoc} theme={data.prefs.theme || 'white'} viewerNickname={data.prefs.nickname} viewerEmail={authUser?.email || '로컬 미리보기 계정'} isShared={false} onBack={() => setView('library')} onEdit={() => editDoc(currentDoc)} onDelete={() => deleteDoc(currentDoc)} onOpenSettings={() => { setView('library'); setSettingsOpen(true); }} dialog={dialog} dialogInput={dialogInput} setDialogInput={setDialogInput} closeDialog={closeDialog} notice={notice} clearNotice={() => setNotice('')}/></main>;
@@ -550,7 +490,7 @@ export default function App() {
     <div className="topbar">
       <button className="brand" onClick={() => setView('library')}><span className="brand-mark">w.</span><span>WBW</span></button>
       <nav className="top-nav"><button className={view==='library'?'nav-current':''} onClick={() => setView('library')}>내 서재</button></nav>
-      <div className="top-actions">{isSupabaseConfigured && <span className="cloud-status connected"><i/>클라우드 설정됨</span>}<button className="avatar" aria-label="프로필 열기" onClick={() => setProfileOpen(true)}>H</button></div>
+      <div className="top-actions"><button className="avatar" aria-label="프로필 열기" onClick={() => setProfileOpen(true)}>{(data.prefs.nickname || 'W').slice(0,1)}</button></div>
     </div>
 
     {view === 'library' && <section className="library-page">
@@ -577,13 +517,13 @@ export default function App() {
 
     {profileOpen && <><div className="drawer-scrim" onClick={()=>setProfileOpen(false)}/><aside className="profile-drawer"><header className="drawer-head"><span className="eyebrow">ACCOUNT</span><IconButton title="닫기" onClick={()=>setProfileOpen(false)}><X size={18}/></IconButton></header><div className="profile-summary"><div className="profile-avatar">{(data.prefs.nickname || 'W').slice(0,1)}</div><h2>{data.prefs.nickname}</h2><p>{authUser?.email || '로컬 미리보기 계정'}</p><span className="profile-tag">WBW WRITER</span></div><div className="drawer-rule"/><button className="drawer-link" onClick={()=>{setProfileOpen(false);setView('library')}}><BookOpen size={18}/><span>내 서재</span><ChevronRight size={16}/></button><button className="drawer-link" onClick={()=>{setProfileOpen(false);setSettingsOpen(true)}}><Settings size={18}/><span>환경 설정</span><ChevronRight size={16}/></button><div className="drawer-bottom"><p>나만의 문장을 쓰는 공간</p><button className="logout-button" onClick={doSignOut}><LogOut size={16}/>로그아웃</button></div></aside></>}
 
-    {settingsOpen && <Modal title="환경 설정" close={()=>setSettingsOpen(false)} wide><div className="settings-body"><section className="settings-section"><div><h3>테마 색상</h3><p>서재의 분위기를 선택해요.</p></div><div className="theme-options">{[['sky','하늘','#dceefa'],['white','하양','#fff'],['black','검정','#292929'],['gray','회색','#d6d6d6'],['sand','베이지','#eee6d9']].map(([id,label,color])=><button className={`theme-option ${data.prefs.theme===id?'chosen':''}`} key={id} onClick={()=>updatePrefs('theme',id)}><i style={{background:color}}/><span>{label}</span></button>)}</div></section><section className="settings-section"><div><h3>기본 글꼴</h3><p>편집기에 사용할 글꼴을 설정해요.</p></div><select className="settings-select" value={data.prefs.font} onChange={e=>updatePrefs('font',e.target.value)}><option>Pretendard</option><option>Georgia</option><option>바탕</option><option>맑은 고딕</option><option>serif</option></select></section><section className="settings-section"><div><h3>닉네임</h3><p>서재에 표시될 이름이에요.</p></div><div className="nickname-controls"><input value={data.prefs.nickname} onChange={e=>updatePrefs('nickname',e.target.value)} onBlur={persistNickname} maxLength={24}/><button className="button button-outline" onClick={()=>updatePrefs('nickname',randomNames[Math.floor(Math.random()*randomNames.length)])}><Sparkles size={15}/>랜덤</button></div></section><section className="danger-zone"><div><h3>계정 탈퇴</h3><p>탈퇴하면 계정과 업로드한 글이 모두 삭제됩니다.</p></div><button className="button button-danger" onClick={()=>setModal('delete-account')}><Trash2 size={15}/>계정 탈퇴</button></section></div><div className="modal-footer"><button className="button button-dark" onClick={()=>setSettingsOpen(false)}>완료</button></div></Modal>}
+    {settingsOpen && <Modal title="환경 설정" close={()=>setSettingsOpen(false)} wide><div className="settings-body"><section className="settings-section"><div><h3>테마 색상</h3><p>서재의 분위기를 선택해요.</p></div><div className="theme-options">{[['sky','하늘','#dceefa'],['white','하양','#fff'],['black','검정','#292929'],['gray','회색','#d6d6d6'],['sand','베이지','#eee6d9']].map(([id,label,color])=><button className={`theme-option ${data.prefs.theme===id?'chosen':''}`} key={id} onClick={()=>updatePrefs('theme',id)}><i style={{background:color}}/><span>{label}</span></button>)}</div></section><section className="settings-section"><div><h3>기본 글꼴</h3><p>편집기에 사용할 글꼴을 설정해요.</p></div><select className="settings-select" value={data.prefs.font} onChange={e=>updatePrefs('font',e.target.value)}><option>Pretendard</option><option>Georgia</option><option>바탕</option><option>맑은 고딕</option><option>serif</option></select></section><section className="settings-section"><div><h3>닉네임</h3><p>서재에 표시될 이름이에요.</p></div><div className="nickname-controls"><input value={data.prefs.nickname} onChange={e=>updatePrefs('nickname',e.target.value)} maxLength={24}/><button className="button button-outline" onClick={()=>updatePrefs('nickname',randomNames[Math.floor(Math.random()*randomNames.length)])}><Sparkles size={15}/>랜덤</button></div></section><section className="danger-zone"><div><h3>계정 탈퇴</h3><p>탈퇴하면 계정과 업로드한 글이 모두 삭제됩니다.</p></div><button className="button button-danger" onClick={()=>setModal('delete-account')}><Trash2 size={15}/>계정 탈퇴</button></section></div><div className="modal-footer"><button className="button button-dark" onClick={()=>setSettingsOpen(false)}>완료</button></div></Modal>}
 
     {modal==='layout' && <Modal title="문서 레이아웃" close={()=>setModal('')}><div className="layout-form"><label>용지 크기<select value={draft.page} onChange={e=>changeDraft('page',e.target.value)}><option>A4</option><option>A5</option><option>Letter</option></select></label><PagePreview draft={draft}/><div className="page-view-control"><span>페이지 보기</span><div><button type="button" className={draft.viewMode==='single'?'selected':''} onClick={()=>changeDraft('viewMode','single')}>단면 보기</button><button type="button" className={draft.viewMode==='double'?'selected':''} onClick={()=>changeDraft('viewMode','double')}>양면 보기</button></div></div><fieldset className="margin-settings"><legend>여백</legend><div className="margin-grid">{[['marginTop','위쪽'],['marginRight','오른쪽'],['marginBottom','아래쪽'],['marginLeft','왼쪽']].map(([key,label])=><label className="number-setting" key={key}>{label}<span className="number-input-wrap"><input type="number" min="0" max="100" step="1" value={draft[key]} onChange={e=>changeDraft(key,Number(e.target.value))}/><small>mm</small></span></label>)}</div></fieldset><label className="number-setting">자간<span className="number-input-wrap"><input type="number" min="-1" max="10" step="0.1" value={draft.spacing} onChange={e=>changeDraft('spacing',Number(e.target.value))}/><small>px</small></span></label><label className="number-setting">줄 간격<span className="number-input-wrap"><input type="number" min="0.8" max="3" step="0.1" value={draft.line} onChange={e=>changeDraft('line',Number(e.target.value))}/><small>배</small></span></label><p className="form-note">글꼴은 이 기기에서 사용할 수 있는 글꼴을 기준으로 표시됩니다.</p></div><div className="modal-footer modal-footer-between"><button className="button button-outline" onClick={resetLayout}>기본값으로 초기화</button><button className="button button-dark" onClick={()=>setModal('')}>적용</button></div></Modal>}
 
     {modal==='upload' && <Modal title="글 업로드" close={()=>{setModal('');setPasswordDraft('')}}><div className="upload-form"><label>글 제목<input value={draft.title} onChange={e=>changeDraft('title',e.target.value)} placeholder="제목을 입력해 주세요"/></label><label>공개 설정<select value={draft.visibility || '비공개'} onChange={e=>{changeDraft('visibility',e.target.value);if(e.target.value!=='비밀번호 보호')setPasswordDraft('')}}><option>비공개</option><option>링크 공개</option><option>비밀번호 보호</option></select></label>{draft.visibility==='비밀번호 보호'&&<label>열람 비밀번호<input type="password" autoComplete="new-password" value={passwordDraft} onChange={e=>setPasswordDraft(e.target.value)} placeholder="비밀번호를 입력해 주세요"/></label>}<label className={`check-row ${draft.scheduleEnabled?'schedule-enabled':''}`}><input type="checkbox" checked={draft.scheduleEnabled} onChange={e=>changeDraft('scheduleEnabled',e.target.checked)}/> 예약 업로드 사용</label><label className={`schedule-time ${draft.scheduleEnabled?'schedule-enabled':''}`}>예약 시간<input type="datetime-local" min={toLocalDateTime(new Date())} value={draft.scheduledAt} onChange={e=>changeDraft('scheduledAt',e.target.value)} disabled={!draft.scheduleEnabled}/></label><div className="share-link-box"><Link2 size={16}/><span>{window.location.origin}/share/{selectedDoc || '문서링크'}</span><button onClick={shareDoc}>복사</button></div><p className="form-note">공개 링크와 비밀번호 확인은 실제 공유 배포 시 백엔드 권한 검증이 필요합니다.</p></div><div className="modal-footer"><button className="button button-dark" onClick={saveUpload}>저장하기</button></div></Modal>}
 
-    {modal==='export' && <Modal title="문서 내보내기" close={()=>setModal('')} wide><div className="export-content"><div className="preview-area"><div className="preview-paper"><span className="preview-top">WBW · {draft.page}</span>{draft.title && <h3>{draft.title}</h3>}<div className="preview-text">{countChars(draft.body).slice(0,280) || '작성한 내용이 여기에 미리 표시됩니다.'}</div><span className="preview-page">1</span></div><span className="preview-caption">1쪽 미리보기</span></div><div className="export-options"><span className="eyebrow">FILE FORMAT</span><button onClick={exportPdf}><span className="format-icon"><Printer size={18}/></span><span><b>PDF 문서</b><small>인쇄 대화상자에서 PDF로 저장</small></span><ChevronRight size={17}/></button><button onClick={exportText}><span className="format-icon"><FileText size={18}/></span><span><b>텍스트 파일</b><small>UTF-8 텍스트로 다운로드</small></span><ChevronRight size={17}/></button><button onClick={()=>exportImage('png')}><span className="format-icon"><FileImage size={18}/></span><span><b>PNG 이미지</b><small>첫 페이지를 이미지로 저장</small></span><ChevronRight size={17}/></button><button onClick={()=>exportImage('jpeg')}><span className="format-icon"><FileImage size={18}/></span><span><b>JPEG 이미지</b><small>첫 페이지를 이미지로 저장</small></span><ChevronRight size={17}/></button><p className="form-note">이미지 내보내기는 첫 페이지 기준입니다. 여러 쪽 PDF는 브라우저 인쇄 기능을 사용합니다.</p></div></div></Modal>}
+    {modal==='export' && <Modal title="문서 내보내기" close={()=>setModal('')} wide><div className="export-content"><div className="preview-area"><div className="preview-paper"><span className="preview-top">WBW · {draft.page}</span>{draft.title && <h3>{draft.title}</h3>}<div className="preview-text">{countChars(draft.body).slice(0,280) || '작성한 내용이 여기에 미리 표시됩니다.'}</div><span className="preview-page">1</span></div><span className="preview-caption">1쪽 미리보기</span></div><div className="export-options"><span className="eyebrow">FILE FORMAT</span><button onClick={exportPdf}><span className="format-icon"><Printer size={18}/></span><span><b>PDF 문서</b><small>인쇄 대화상자에서 PDF로 저장</small></span><ChevronRight size={17}/></button></div></div></Modal>}
 
     {modal==='delete-account' && <Modal title="계정 탈퇴" close={()=>{setModal('');setDeleteConfirmName('')}}><div className="delete-warning"><div className="warning-icon"><Trash2 size={20}/></div><h3>정말 탈퇴하시겠어요?</h3><p>탈퇴하면 계정과 업로드한 글이 모두 삭제되며 되돌릴 수 없습니다.</p><label>확인을 위해 닉네임을 입력해 주세요<input value={deleteConfirmName} placeholder={data.prefs.nickname} onChange={e=>setDeleteConfirmName(e.target.value)}/></label></div><div className="modal-footer"><button className="button button-outline" onClick={()=>{setModal('');setDeleteConfirmName('')}}>취소</button><button className="button button-danger" disabled={deleteConfirmName!==data.prefs.nickname} onClick={()=>setNotice('계정 삭제는 실제 인증·서버 연동 후 활성화됩니다.')}>영구 삭제</button></div></Modal>}
 
@@ -596,31 +536,15 @@ export default function App() {
   </main>;
 }
 
-function LoginScreen({ configured, loading, error, success, onGoogle, onEmail, onPreview, clearMessages }) {
-  const [mode, setMode] = useState('login');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const chooseMode = next => { setMode(next); clearMessages(); };
-
+function LoginScreen({ loading, error, startGoogleLogin, onPreview }) {
   return <main className="login-shell">
     <header className="login-header"><a className="brand" href="#top"><span className="brand-mark">w.</span><span>WBW</span></a><span className="login-header-note">WRITE BY WRITING</span></header>
     <div className="login-layout">
       <section className="login-story"><div className="story-top"><span className="story-kicker"><i/> YOUR PERSONAL WRITING SPACE</span><span className="story-number">NO. 001</span></div><div className="story-copy"><p>당신의 문장이<br/>머무는 곳.</p><span>Write freely.<br/>Keep every word.</span></div><div className="story-paper"><div className="paper-lines"><span>오늘은 조금 천천히</span><span>문장을 골라 써보기로 했다.</span><span>마음이 따라올 때까지.</span></div><span className="paper-number">01 / 03</span></div><div className="story-bottom"><span>WORDS ARE YOURS.</span><span>EST. WBW</span></div></section>
       <section className="login-panel"><div className="login-card">
-        <div className="login-heading"><span className="eyebrow">WELCOME TO WBW</span><h1>{mode==='signup'?'새로운 서재를 만들어요':mode==='reset'?'비밀번호를 재설정해요':'다시, 문장을 써볼까요?'}</h1><p>{mode==='signup'?'이메일 인증을 마치면 닉네임은 자동으로 만들어져요.':mode==='reset'?'가입한 이메일 주소를 입력해 주세요.':'글을 쓰고, 정리하고, 오래 간직하세요.'}</p></div>
-        {mode!=='reset' && <div className="auth-tabs"><button className={mode==='login'?'active':''} onClick={()=>chooseMode('login')}>로그인</button><button className={mode==='signup'?'active':''} onClick={()=>chooseMode('signup')}>회원가입</button></div>}
-        {mode!=='reset' && <button className="google-button" onClick={onGoogle} disabled={loading}><GoogleMark/>Google 계정으로 계속하기</button>}
-        {mode!=='reset' && <div className="auth-divider"><span>또는 이메일로 {mode==='signup'?'가입':'로그인'}</span></div>}
-        <form className="auth-form" onSubmit={e=>{e.preventDefault();onEmail({mode,email,password});}}>
-          <label>이메일<input type="email" required autoComplete="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@example.com"/></label>
-          {mode!=='reset' && <label>비밀번호<div className="password-wrap"><input type={showPassword?'text':'password'} required minLength={6} autoComplete={mode==='signup'?'new-password':'current-password'} value={password} onChange={e=>setPassword(e.target.value)} placeholder={mode==='signup'?'6자 이상 입력해 주세요':'비밀번호를 입력해 주세요'}/><button type="button" onClick={()=>setShowPassword(v=>!v)}>{showPassword?'숨기기':'보기'}</button></div></label>}
-          {mode==='login' && <button type="button" className="forgot-link" onClick={()=>chooseMode('reset')}>비밀번호를 잊으셨나요?</button>}
-          {error && <p className="auth-message auth-error" role="alert">{error}</p>}{success && <p className="auth-message auth-success" role="status">{success}</p>}
-          <button type="submit" className="button button-dark auth-submit" disabled={loading}>{loading?<span className="button-spinner"/>:null}{mode==='signup'?'계정 만들기':mode==='reset'?'재설정 링크 보내기':'로그인'}</button>
-        </form>
-        {mode==='reset' && <button className="return-login" onClick={()=>chooseMode('login')}><ArrowLeft size={14}/>로그인으로 돌아가기</button>}
-        {!configured && <div className="setup-hint"><span className="hint-dot"/><span>로그인을 연결하려면 관리자에게 WBW 인증 설정을 요청해 주세요.</span></div>}
+        <div className="login-heading"><span className="eyebrow">WELCOME TO WBW</span><h1>다시, 문장을 써볼까요?</h1><p>글을 쓰고, 정리하고, 오래 간직하세요.</p></div>
+        {error && <p className="auth-message auth-error" role="alert">{error}</p>}
+        <button className="google-button" onClick={startGoogleLogin} disabled={loading}>{loading?<span className="button-spinner"/>:<GoogleMark/>}Google 계정으로 계속하기</button>
         <div className="preview-entry"><span>먼저 둘러보고 싶다면</span><button onClick={onPreview}>로컬 미리보기 <ChevronRight size={14}/></button></div>
       </div><p className="login-legal">계속 진행하면 WBW의 이용 약관과 개인정보 처리방침에 동의하는 것으로 간주됩니다.</p></section>
     </div><footer className="login-footer"><span>© 2026 WBW</span><span>WRITE BY WRITING</span></footer>

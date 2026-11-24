@@ -1,0 +1,259 @@
+/* ============================================================
+   WBW 디자인 오버라이드 — "원고지 위의 잉크와 낙관(인장)" 컨셉
+   main.jsx에서 styles.css, login.css "다음에" import 하세요.
+   ============================================================ */
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard-dynamic-subset.css");
+@import url("https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;600;700&display=swap");
+
+:root {
+  --serif: "Noto Serif KR", "Nanum Myeongjo", Georgia, serif;
+  --sans: "Pretendard", "Noto Sans KR", system-ui, sans-serif;
+  font-family: var(--sans);
+  background: #f7f4ee;
+}
+body { font-family: var(--sans); }
+
+/* ---------- 색 변수 (테마별) ---------- */
+.app-shell, .login-shell {
+  --bg: #f7f4ee;
+  --surface: #fffdf9;
+  --text: #2a2622;
+  --muted: #8a8176;
+  --line: #e4ddd0;
+  --soft: #efe9dd;
+  --accent: #2a2622;
+  --seal: #b4472f;
+  font-family: var(--app-font, var(--sans));
+  font-size: 15px;
+  line-height: 1.6;
+}
+.app-shell.theme-sky   { --bg:#eef3f4; --surface:#fbfdfd; --soft:#e1ebee; --line:#d5e1e5; --text:#22343c; --muted:#76898f; --accent:#2c4a57; }
+.app-shell.theme-gray  { --bg:#ecece9; --surface:#f8f8f6; --soft:#e3e3df; --line:#d9d9d4; --muted:#85857f; }
+.app-shell.theme-sand  { --bg:#f1eadc; --surface:#fbf7ee; --soft:#ebe2d0; --line:#e0d5bf; --muted:#8f8370; }
+.app-shell.theme-black { --bg:#1b1917; --surface:#242120; --soft:#2d2926; --line:#3a3531; --text:#efe9df; --muted:#a39a8d; --accent:#efe9df; --seal:#d1664b; }
+
+/* ---------- 공통 요소 ---------- */
+/* 영문 대문자 라벨(eyebrow)은 기본 숨김, 필요한 곳만 한글로 다시 보여줌 */
+.eyebrow { display: none; letter-spacing: 0; text-transform: none; }
+.error-content > .eyebrow { display: block; font-size: 12px; letter-spacing: .08em; color: var(--muted); }
+
+.button { height: 42px; border-radius: 4px; font-size: 13px; font-weight: 600; padding: 0 18px; }
+.welcome-row .button-dark { background: var(--seal); color: #fff; }
+.button-danger { border-radius: 4px; }
+.icon-button { border-radius: 4px; }
+
+.brand { font-family: var(--serif); font-size: 18px; font-weight: 700; letter-spacing: 0; }
+.brand-mark, .reader-lock-mark, .auth-loading .brand-mark {
+  width: 28px; height: 28px; border-radius: 3px;
+  background: var(--seal); color: #fff;
+  font-family: var(--serif); font-style: normal; font-weight: 700; font-size: 16px;
+}
+.reader-lock-mark { width: 42px; height: 42px; font-size: 22px; }
+
+.avatar, .profile-avatar, .reader-avatar, .avatar.reader-avatar {
+  background: var(--soft); color: var(--text);
+  font-family: var(--serif); font-weight: 700;
+}
+
+/* ---------- 상단바 ---------- */
+.topbar, .reader-topbar { background: var(--bg); height: 68px; }
+.top-nav button { font-size: 14px; }
+.top-nav button.nav-current:after { background: var(--seal); }
+
+/* ---------- 서재 ---------- */
+.library-page { max-width: 1120px; padding: 60px 32px 48px; }
+.welcome-row { align-items: flex-end; margin-bottom: 40px; padding-bottom: 26px; border-bottom: 2px solid var(--text); }
+.welcome-row h1 { font-family: var(--serif); font-size: 40px; font-weight: 700; letter-spacing: -.03em; margin: 0 0 10px; }
+.period { display: none; }
+.subtle { font-size: 14px; }
+.home-footer { display: none; }
+
+.workspace-grid { grid-template-columns: 260px 1fr; gap: 40px; }
+
+/* 박스 카드 → 평평한 두 단 */
+.folder-card { background: transparent; border: 0; border-radius: 0; border-right: 1px solid var(--line); padding: 0 24px 0 0; }
+.documents-card { background: transparent; border: 0; border-radius: 0; padding: 0; min-height: 0; }
+.card-heading { padding: 0 0 12px; }
+.card-heading h2 { font-family: var(--serif); font-size: 18px; margin: 0; }
+
+.folder-row { height: 40px; border-radius: 0; font-size: 14px; padding: 0 10px; margin: 0; }
+.folder-row:hover { background: var(--soft); }
+.folder-row.selected { background: transparent; color: var(--text); font-weight: 600; box-shadow: inset 3px 0 0 var(--seal); }
+.folder-row small, .folder-select small, .folder-count { font-size: 12px; }
+.nested-folder { padding-left: 16px; }
+
+.documents-head { padding-bottom: 20px; align-items: flex-end; }
+.crumb { font-size: 12px; margin-bottom: 10px; }
+.documents-head h2 { font-family: var(--serif); font-size: 24px; font-weight: 700; margin: 0 0 6px; }
+.search-box, .sort-toggle { border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; height: 36px; font-size: 13px; }
+.search-box input { font-size: 13px; width: 140px; }
+.sort-toggle { font-size: 12px; }
+.subfolder-chip { border-radius: 3px; font-size: 13px; height: 34px; }
+
+.doc-list { border-top: 0; }
+.doc-row { border-bottom: 1px solid var(--line); gap: 16px; }
+.doc-row:hover { background: var(--soft); }
+.doc-main { padding: 18px 8px; gap: 0; }
+.doc-icon { display: none; }
+.doc-copy { gap: 6px; }
+.doc-copy strong { font-family: var(--serif); font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
+.doc-copy small { font-size: 13px; max-width: 460px; }
+.doc-main time { font-size: 12px; }
+.visibility { background: none; border: 1px solid var(--line); border-radius: 3px; padding: 3px 7px; font-size: 11px; }
+.visibility.public { background: none; color: var(--seal); border-color: currentColor; }
+.empty-state { min-height: 280px; }
+.empty-icon { border-radius: 4px; }
+.empty-state h3 { font-family: var(--serif); font-size: 17px; }
+.empty-state p { font-size: 13px; }
+
+/* ---------- 에디터 ---------- */
+.editor-top, .toolbar, .editor-footer { background: var(--bg); }
+.back-link, .editor-breadcrumb { font-size: 13px; }
+.save-label { font-size: 12px; }
+.select-wrap select { font-size: 13px; }
+.toolbar-text { font-size: 12px; }
+.numeric-toolbar { font-size: 12px; }
+.share-button, .export-button { height: 34px; font-size: 12px; }
+.paper { box-shadow: 0 1px 2px #0000000d, 0 10px 28px #3a2e1a14; border-radius: 0; }
+.editor-footer { font-size: 12px; }
+
+.writing-side { gap: 18px; }
+.side-card { background: transparent; border: 0; border-top: 2px solid var(--text); border-radius: 0; padding: 12px 0 4px; }
+.side-card .eyebrow { display: block; font-size: 0; }
+.side-card .eyebrow::after { font-size: 13px; font-weight: 600; color: var(--text); }
+.writing-side .side-card:nth-child(1) .eyebrow::after { content: "글자 수"; }
+.writing-side .side-card:nth-child(2) .eyebrow::after { content: "문서 정보"; }
+.word-number { font-family: var(--serif); font-size: 32px; margin: 8px 0 12px; }
+.count-line, .doc-meta { font-size: 13px; }
+.side-link { border-radius: 4px; font-size: 13px; background: transparent; }
+
+/* ---------- 서랍 / 모달 ---------- */
+.drawer-scrim, .veil, .notice-veil { backdrop-filter: none; -webkit-backdrop-filter: none; background: #1a161288; }
+.profile-drawer { box-shadow: -8px 0 30px #00000012; }
+.drawer-head { justify-content: flex-end; }
+.profile-summary h2 { font-family: var(--serif); font-size: 20px; }
+.profile-summary p { font-size: 13px; }
+.profile-tag { border-radius: 3px; font-size: 10px; }
+.drawer-link { font-size: 14px; border-radius: 4px; }
+.logout-button { font-size: 13px; border-radius: 4px; }
+.drawer-bottom p { font-size: 12px; }
+
+.modal { border-radius: 6px; box-shadow: 0 12px 40px #0000002a; padding: 24px; }
+.modal-head h2 { font-family: var(--serif); font-size: 19px; }
+.settings-section, .danger-zone { grid-template-columns: 170px 1fr; }
+.settings-section h3, .danger-zone h3 { font-size: 14px; }
+.settings-section p, .danger-zone p { font-size: 12.5px; }
+.theme-option { font-size: 12px; border-radius: 4px; }
+.theme-option.chosen { border-color: var(--seal); }
+.settings-select, .nickname-controls input, .upload-form input, .upload-form select, .layout-form select,
+.number-input-wrap input, .dialog-input, .delete-warning input { border-radius: 4px; font-size: 13px; height: 38px; }
+.layout-form label, .upload-form label, .layout-form legend, .margin-settings legend { font-size: 13px; }
+.form-note { font-size: 12px; }
+.share-link-box { border-radius: 4px; }
+.share-link-box span, .share-link-box button { font-size: 12px; }
+.page-view-control { font-size: 13px; }
+.page-view-control > div, .page-view-control button { border-radius: 4px; font-size: 12px; }
+.export-options b { font-size: 13px; }
+.export-options small { font-size: 11px; }
+.export-options > .eyebrow { display: block; font-size: 0; }
+.export-options > .eyebrow::after { content: "파일 형식"; font-size: 13px; font-weight: 600; color: var(--text); }
+.export-options > button, .preview-area { border-radius: 4px; }
+.format-icon { border-radius: 4px; }
+.delete-warning h3 { font-size: 16px; }
+.delete-warning p, .delete-warning label { font-size: 13px; }
+
+.notice-dialog { border-radius: 6px; }
+.notice-icon { border-radius: 4px; background: var(--seal); color: #fff; }
+.notice-dialog p { font-size: 14px; }
+.confirm-dialog-copy p { font-size: 14px; }
+.toast { border-radius: 4px; font-size: 13px; }
+.row-menu { border-radius: 4px; }
+.row-menu button { font-size: 13px; border-radius: 3px; }
+
+/* ---------- 읽기 화면 ---------- */
+.reader-label { display: none; }
+.reader-paper { border-radius: 0; box-shadow: 0 1px 2px #0000000d, 0 10px 28px #3a2e1a12; }
+.reader-paper-meta { justify-content: flex-end; font-size: 12px; letter-spacing: 0; }
+.reader-paper-meta span:first-child { display: none; }
+.reader-paper h1 { font-family: var(--serif); font-weight: 700; }
+.reader-author { font-size: 14px; }
+.reader-password-card { border-radius: 6px; }
+.reader-password-card .eyebrow { display: none; }
+.reader-password-card h1 { font-family: var(--serif); }
+.reader-password-card p, .reader-password-card input { font-size: 13px; }
+.reader-password-card input { border-radius: 4px; }
+
+/* ---------- 에러 화면 ---------- */
+.error-mark { border-radius: 4px; border-color: var(--seal); color: var(--seal); font-family: var(--serif); width: 72px; height: 72px; font-size: 40px; }
+.error-content h1 { font-family: var(--serif); font-weight: 700; }
+.error-content p { font-size: 15px; }
+
+/* ---------- 로그인 ---------- */
+.login-shell { background: var(--bg); color: var(--text); }
+.login-header { height: 68px; background: transparent; border-bottom: 1px solid var(--line); }
+.login-header .brand { color: var(--text); }
+.login-header-note { display: none; }
+.login-layout {
+  height: auto; min-height: 620px; margin: 40px auto 28px;
+  border: 0; border-radius: 0; background: transparent; box-shadow: none;
+  grid-template-columns: 1.1fr 1fr; gap: 0;
+}
+/* 원고지 칸 무늬 */
+.login-story {
+  --grid: #ecd3c9;
+  background-color: var(--surface); color: var(--text);
+  border: 1px solid var(--line);
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 40px 40px;
+  justify-content: flex-end; padding: 52px;
+}
+.story-top, .story-bottom, .story-paper { display: none; }
+.story-copy { margin-top: 0; }
+.story-copy p {
+  font-family: var(--serif); font-size: 44px; font-weight: 700; line-height: 1.4; letter-spacing: -.04em;
+  background: var(--surface); display: inline; box-decoration-break: clone; -webkit-box-decoration-break: clone;
+  padding: 2px 10px 2px 0;
+}
+.story-copy > span { display: block; margin-top: 22px; font-size: 15px; color: var(--muted); }
+.login-panel { padding: 48px 56px; }
+.login-heading .eyebrow { display: none; }
+.login-heading h1 { font-family: var(--serif); font-size: 30px; font-weight: 700; letter-spacing: -.04em; }
+.login-heading p { font-size: 14px; }
+.google-button { height: 48px; border-radius: 4px; border-color: var(--text); font-size: 14px; background: transparent; color: var(--text); }
+.google-button:hover { background: var(--soft); }
+.auth-message { font-size: 13px; border-radius: 4px; }
+.preview-entry, .preview-entry button { font-size: 13px; color: var(--muted); }
+.preview-entry button { color: var(--text); }
+.login-legal { font-size: 12px; color: var(--muted); }
+.login-footer { font-size: 12px; letter-spacing: 0; color: var(--muted); }
+.login-footer span:last-child { display: none; }
+.auth-loading { font-size: 14px; color: var(--muted); }
+
+/* ---------- 반응형 ---------- */
+@media (max-width: 900px) {
+  .workspace-grid { grid-template-columns: 220px 1fr; gap: 24px; }
+  .folder-card { padding-right: 14px; }
+}
+@media (max-width: 760px) {
+  .login-layout { grid-template-columns: 1fr; min-height: 0; margin: 14px auto 20px; }
+  .login-story { height: auto; min-height: 0; padding: 32px 24px; background-size: 32px 32px; }
+  .story-copy p { font-size: 28px; }
+  .story-copy > span { position: static; font-size: 13px; margin-top: 14px; }
+  .login-panel { padding: 32px 20px; }
+  .login-heading h1 { font-size: 25px; }
+}
+@media (max-width: 650px) {
+  .library-page { padding: 36px 16px 32px; }
+  .welcome-row { gap: 16px; flex-wrap: wrap; align-items: flex-start; }
+  .welcome-row h1 { font-size: 30px; }
+  .workspace-grid { grid-template-columns: 1fr; gap: 24px; }
+  .folder-card { border-right: 0; border-bottom: 1px solid var(--line); padding: 0 0 12px; }
+  .documents-card { padding: 0; }
+  .documents-head h2 { font-size: 21px; }
+  .doc-copy small { max-width: 200px; }
+  .doc-copy strong { font-size: 16px; }
+  .settings-section, .danger-zone { grid-template-columns: 1fr; }
+  .modal { padding: 18px; }
+}
