@@ -9,20 +9,21 @@
   --serif: "Noto Serif KR", "Nanum Myeongjo", Georgia, serif;
   --sans: "Pretendard", "Noto Sans KR", system-ui, sans-serif;
   font-family: var(--sans);
-  background: #f7f4ee;
+  background: #fafafa;
 }
 body { font-family: var(--sans); }
 
 /* ---------- 색 변수 (테마별) ---------- */
 .app-shell, .login-shell {
-  --bg: #f7f4ee;
-  --surface: #fffdf9;
-  --text: #2a2622;
-  --muted: #8a8176;
-  --line: #e4ddd0;
-  --soft: #efe9dd;
-  --accent: #2a2622;
+  --bg: #fafafa;
+  --surface: #ffffff;
+  --text: #222222;
+  --muted: #8a8a8a;
+  --line: #e8e8e8;
+  --soft: #f3f3f3;
+  --accent: #222222;
   --seal: #b4472f;
+  --serif: var(--app-font, "Noto Serif KR", Georgia, serif);
   font-family: var(--app-font, var(--sans));
   font-size: 15px;
   line-height: 1.6;
@@ -97,7 +98,7 @@ body { font-family: var(--sans); }
 .doc-icon { display: none; }
 .doc-copy { gap: 6px; }
 .doc-copy strong { font-family: var(--serif); font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
-.doc-copy small { font-size: 13px; max-width: 460px; }
+.doc-copy small { font-size: 13px; max-width: 460px; white-space: pre-line; }
 .doc-main time { font-size: 12px; }
 .visibility { background: none; border: 1px solid var(--line); border-radius: 3px; padding: 3px 7px; font-size: 11px; }
 .visibility.public { background: none; color: var(--seal); border-color: currentColor; }
@@ -113,6 +114,34 @@ body { font-family: var(--sans); }
 .select-wrap select { font-size: 13px; }
 .toolbar-text { font-size: 12px; }
 .numeric-toolbar { font-size: 12px; }
+.toolbar .select-wrap select,
+.toolbar .select-wrap select option {
+  letter-spacing: 0;
+  word-spacing: normal;
+  font-kerning: normal;
+  font-family: "DM Sans", "Noto Sans KR", sans-serif;
+}
+.toolbar .select-wrap select { padding-right: 19px; }
+.numeric-toolbar,
+.numeric-toolbar input,
+.numeric-toolbar span {
+  letter-spacing: 0;
+  word-spacing: normal;
+  font-variant-numeric: tabular-nums;
+}
+.paper.paper-spread {
+  font-size: var(--paper-size);
+  letter-spacing: var(--paper-spacing);
+  line-height: var(--paper-line);
+}
+.paper.paper-spread .prose-editor {
+  font-size: var(--paper-size);
+  letter-spacing: var(--paper-spacing);
+  line-height: var(--paper-line);
+  width: 200%;
+  min-height: calc((var(--page-unit-height) - var(--paper-margin-top, 24mm) - var(--paper-margin-bottom, 24mm)) * 2);
+  zoom: .5;
+}
 .share-button, .export-button { height: 34px; font-size: 12px; }
 .paper { box-shadow: 0 1px 2px #0000000d, 0 10px 28px #3a2e1a14; border-radius: 0; }
 .editor-footer { font-size: 12px; }
@@ -177,6 +206,7 @@ body { font-family: var(--sans); }
 .reader-paper-meta span:first-child { display: none; }
 .reader-paper h1 { font-family: var(--serif); font-weight: 700; }
 .reader-author { font-size: 14px; }
+.reader-body :is(p, h1, h2, h3, blockquote, pre) { margin-block-start: 0; margin-block-end: var(--reader-paragraph-spacing, .8em); }
 .reader-password-card { border-radius: 6px; }
 .reader-password-card .eyebrow { display: none; }
 .reader-password-card h1 { font-family: var(--serif); }
@@ -257,3 +287,152 @@ body { font-family: var(--sans); }
   .settings-section, .danger-zone { grid-template-columns: 1fr; }
   .modal { padding: 18px; }
 }
+
+/* ============================================================
+   2차 개선: 상태 색 정리, 포커스/호버, 숫자 정렬, 스크롤바 등
+   ============================================================ */
+
+/* 성공 알림이 빨간 체크로 보이면 오류처럼 읽혀서 잉크색으로 */
+.notice-icon { background: var(--accent); color: var(--surface); }
+
+/* '링크 공개'는 경고처럼 보이는 빨강 대신 차분한 초록 */
+.visibility.public { color: #4f7a5e; border-color: currentColor; }
+.theme-black .visibility.public { color: #8fbf9f; }
+
+/* 텍스트 선택 색 */
+.app-shell ::selection { background: #b4472f33; }
+
+/* 키보드 포커스가 보이도록 */
+.app-shell :focus-visible, .login-shell :focus-visible {
+  outline: 2px solid var(--seal); outline-offset: 2px; border-radius: 4px;
+}
+.prose-editor:focus-visible, .search-box input:focus-visible,
+.folder-name-input:focus-visible { outline: 0; }
+.search-box:focus-within { border-bottom-color: var(--text); }
+.settings-select:focus, .nickname-controls input:focus, .upload-form input:focus,
+.upload-form select:focus, .layout-form select:focus, .number-input-wrap input:focus,
+.dialog-input:focus, .delete-warning input:focus {
+  border-color: var(--text); outline: 0; box-shadow: 0 0 0 3px #b4472f26;
+}
+
+/* 호버·눌림 반응 */
+.button, .icon-button, .folder-row, .doc-row, .drawer-link, .row-menu button,
+.sort-toggle, .subfolder-chip, .google-button, .avatar {
+  transition: background-color .15s, color .15s, border-color .15s, box-shadow .15s, transform .1s, filter .15s;
+}
+.button:hover:not(:disabled) { filter: brightness(1.12); }
+.button-outline:hover:not(:disabled), .button-light:hover:not(:disabled) { filter: none; background: var(--soft); }
+.button:active:not(:disabled) { transform: translateY(1px); }
+.top-actions .avatar:hover { border-color: var(--seal); }
+.doc-row:hover .doc-copy strong { color: var(--seal); }
+.theme-black .doc-row:hover .doc-copy strong { color: #e0836b; }
+
+/* 긴 제목이 레이아웃을 밀지 않게 */
+.doc-copy { min-width: 0; }
+.doc-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 숫자 폭 맞춤 */
+.word-number, .count-line b, .folder-count, .doc-main time, .editor-footer, .folder-row small {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 스크롤바를 얇고 조용하게 */
+.app-shell * { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+
+/* 움직임을 줄이고 싶은 사용자 설정 존중 */
+@media (prefers-reduced-motion: reduce) {
+  .app-shell *, .login-shell * { transition: none !important; animation: none !important; }
+}
+
+/* ============================================================
+   3차: 폴더 접기 화살표 (App.jsx FolderTree 수정과 함께 사용)
+   ============================================================ */
+.folder-row { gap: 6px; }
+.folder-disclosure { flex: 0 0 20px; width: 20px; color: var(--muted); }
+.folder-disclosure:disabled { visibility: hidden; }
+.folder-select > svg { flex: 0 0 auto; color: var(--muted); }
+.folder-row.selected .folder-select > svg { color: var(--seal); }
+.folder-card > button.folder-row { padding-left: 36px; }
+
+/* 쪽 나누기 (Shift+Enter) */
+.prose-editor .wbw-page-break { display: block; width: 100%; user-select: none; }
+.reader-body .wbw-page-break { display: none !important; }
+@media print {
+  .print-only .wbw-page-break { height: 0 !important; margin: 0; border: 0; break-after: page; page-break-after: always; }
+}
+
+/* Home layout correction: keep the writing list wide and folders in the right rail. */
+.app-shell{--seal:var(--accent)}
+.app-shell.theme-black{--seal:var(--accent)}
+.app-shell .brand-mark,.app-shell .top-nav button.nav-current:after{background:var(--accent)}
+.app-shell .library-page{width:min(1640px,100%);max-width:none;min-height:calc(100vh - 68px);padding:38px clamp(22px,4vw,64px) 30px}
+.app-shell .home-workspace-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,360px);gap:28px;align-items:stretch}
+.app-shell .home-documents-card{min-width:0;min-height:calc(100vh - 150px);padding:28px 30px;background:var(--surface);border:1px solid var(--line);border-radius:12px}
+.app-shell .home-documents-card .documents-head{gap:20px;align-items:flex-end}
+.app-shell .home-documents-card .list-actions{flex-shrink:0}
+.app-shell .home-side-panel{min-width:0;display:flex;flex-direction:column;gap:16px}
+.app-shell .home-write-button{width:100%;height:58px;border-radius:10px;background:var(--accent);color:var(--surface);font-size:18px}
+.app-shell .home-side-panel .folder-card{min-height:0;flex:1;padding:22px 18px;background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow-y:auto}
+.app-shell .home-side-panel .card-heading{padding:0 4px 16px}
+.app-shell .home-side-panel .folder-row{width:100%;height:42px;padding:0 10px;border-radius:7px}
+.app-shell .home-side-panel .folder-row.selected{background:var(--soft);box-shadow:inset 3px 0 0 var(--accent)}
+.app-shell .home-side-panel .folder-card>button.folder-row{padding-left:10px}
+.app-shell .home-side-panel .folder-row.selected .folder-select>svg{color:var(--accent)}
+
+/* The all-documents item is a button; normalize browser defaults and make selection calm. */
+.folder-card > button.folder-row {
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  padding-left: 14px;
+  transition: background-color .16s ease, border-color .16s ease;
+}
+.folder-card > button.folder-row:hover {
+  background: var(--soft);
+}
+.folder-card > button.folder-row.selected {
+  border-color: var(--line);
+  background: var(--soft);
+  box-shadow: none;
+}
+.folder-card > button.folder-row:focus:not(:focus-visible) {
+  outline: none;
+}
+.folder-card > button.folder-row:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  outline-offset: 2px;
+}
+.folder-card > button.folder-row small {
+  color: var(--muted);
+  font-weight: 500;
+}
+.app-shell .home-side-panel .folder-footer{display:none}
+.editor-counts { letter-spacing: 0; word-spacing: 0; gap: 18px; }
+.editor-counts span { white-space: nowrap; letter-spacing: 0; }
+.editor-counts b { margin-left: 5px; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+.editor-counts b { display: inline-block; }
+.editor-counts b i, .editor-counts b span { display: inline-block; }
+.editor-counts b i { font-family: "Noto Sans KR", sans-serif; font-style: normal; transform: translateY(-1px); }
+.editor-counts b span { transform: translateY(-1px); }
+.doc-main time { font-family: var(--sans) !important; font-variant-numeric: normal; font-feature-settings: normal; }
+.app-shell .home-documents-card .subfolder-strip { margin-top: 9px; }
+.prose-editor::selection,
+.prose-editor *::selection { background: #b4472f66; color: inherit; }
+
+/* Browser PDF output keeps Korean glyphs through the browser's installed fonts. */
+@media print {
+  .app-shell > :not(.print-only) { display: none !important; }
+  .app-shell { min-height: 0 !important; background: #fff !important; }
+  .print-only {
+    display: block !important;
+    font-family: var(--paper-font), "Noto Sans KR", "Malgun Gothic", sans-serif !important;
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+  }
+  .print-only h1 {
+    font-family: var(--paper-font), "Noto Sans KR", "Malgun Gothic", sans-serif !important;
+  }
+}
+
+@media(max-width:900px){.app-shell .library-page{padding:28px 20px}.app-shell .home-workspace-grid{grid-template-columns:minmax(0,1fr) minmax(250px,320px);gap:18px}.app-shell .home-documents-card{padding:22px 20px}.app-shell .home-documents-card .documents-head{align-items:flex-start;flex-direction:column}.app-shell .home-documents-card .list-actions{width:100%}}
+@media(max-width:650px){.app-shell .library-page{padding:14px 12px}.app-shell .home-workspace-grid{grid-template-columns:minmax(0,1fr);gap:12px}.app-shell .home-side-panel{order:-1}.app-shell .home-write-button{height:48px;font-size:16px}.app-shell .home-side-panel .folder-card{max-height:260px;min-height:0;padding:15px 13px}.app-shell .home-side-panel .folder-footer{display:flex}.app-shell .home-documents-card{min-height:55vh;padding:18px 14px}.app-shell .home-documents-card .documents-head{padding-bottom:15px}.app-shell .home-documents-card .list-actions{flex-wrap:wrap}.app-shell .home-documents-card .search-box{flex:1}.app-shell .home-documents-card .search-box input{width:100%}}
