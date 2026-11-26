@@ -1,0 +1,312 @@
+/* ============================================================
+   WBW 편집기 용지 / 쪽 레이아웃
+   - App.jsx의 쪽 계산(paginateEditor)과 함께 동작합니다.
+   - main.jsx에서 wbw-theme.css "다음에" 가장 마지막으로 import 하세요.
+   - 예전 styles.css / wbw-theme.css 의 용지 관련 규칙(cqw, zoom 등)을 덮어씁니다.
+   ============================================================ */
+
+.app-shell .editor-page { --stage-bg: var(--soft); }
+
+/* 작업 공간 */
+.app-shell .editor-page .writing-workspace {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  overflow: auto;
+  scrollbar-gutter: stable;
+  background: var(--stage-bg);
+}
+
+/* 용지 바깥 상자 (너비/높이는 App.jsx가 계산해서 style로 넣어 줍니다) */
+.app-shell .editor-page .paper-wrap {
+  position: relative;
+  flex: 0 0 auto;
+  margin: 24px auto 64px;
+  padding: 0 !important;
+  container-type: normal;
+}
+
+/* 용지: 쪽마다 흰 종이를 그리고 쪽 사이는 비워 둡니다 */
+.app-shell .editor-page .paper.paper-paged {
+  position: relative;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: none;
+  min-height: 0;
+  margin: 0;
+  padding: var(--paper-margin-top, 24mm) var(--paper-margin-right, 24mm) var(--paper-margin-bottom, 24mm) var(--paper-margin-left, 24mm);
+  background-color: transparent !important;
+  background-image:
+    repeating-linear-gradient(to bottom, transparent 0, transparent calc(var(--sheet-h) - 1px), var(--line) calc(var(--sheet-h) - 1px), var(--line) var(--sheet-h), transparent var(--sheet-h), transparent var(--page-unit)),
+    repeating-linear-gradient(to bottom, var(--surface) 0, var(--surface) var(--sheet-h), transparent var(--sheet-h), transparent var(--page-unit));
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  box-shadow: none;
+  border-radius: 0;
+  font-family: var(--paper-font);
+  font-size: var(--paper-size);
+  letter-spacing: var(--paper-spacing);
+  line-height: var(--paper-line);
+}
+
+/* 양면 보기: 두 쪽 너비로 만든 뒤 화면에 맞게 통째로 축소 (글자·자간도 같은 비율로 줄어듦) */
+.app-shell .editor-page .paper.paper-paged.paper-spread {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: hidden;
+  transform-origin: 0 0;
+}
+/* 왼쪽 쪽과 오른쪽 쪽 사이의 틈 */
+.app-shell .editor-page .paper.paper-paged.paper-spread::before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  top: 0;
+  bottom: 0;
+  left: var(--sheet-w);
+  width: var(--page-gap);
+  background: var(--stage-bg);
+  pointer-events: none;
+}
+/* 쪽 수가 홀수일 때 마지막 줄의 빈 오른쪽 쪽 */
+.app-shell .editor-page .paper.paper-paged.paper-spread.paper-odd::after {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  right: 0;
+  bottom: 0;
+  width: var(--sheet-w);
+  height: var(--sheet-h);
+  background: var(--stage-bg);
+  pointer-events: none;
+}
+
+/* 글 입력 영역 */
+.app-shell .editor-page .paper .prose-editor {
+  position: relative;
+  z-index: 1;
+  box-sizing: border-box;
+  width: auto;
+  max-width: none;
+  height: auto;
+  min-height: calc(var(--sheet-h) - var(--paper-margin-top, 24mm) - var(--paper-margin-bottom, 24mm));
+  zoom: 1;
+  column-count: auto;
+  column-gap: normal;
+  background: transparent;
+  outline: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--paper-size);
+  letter-spacing: var(--paper-spacing);
+  line-height: var(--paper-line);
+}
+
+/* The hint is rendered beside the editor, never as generated editable text. */
+.app-shell .editor-page .paper .prose-editor:empty::before,
+.app-shell .editor-page .paper .prose-editor:has(> p:only-child:has(> br:only-child))::before {
+  content: none !important;
+}
+.app-shell .editor-page .paper .editor-placeholder {
+  position: absolute;
+  z-index: 2;
+  top: var(--paper-margin-top, 24mm);
+  left: var(--paper-margin-left, 24mm);
+  color: #aaa;
+  font-family: var(--paper-font, inherit);
+  font-size: var(--paper-size, 16px);
+  line-height: var(--paper-line, 1.9);
+  letter-spacing: var(--paper-spacing, 0);
+  pointer-events: none;
+  user-select: none;
+  white-space: nowrap;
+}
+.app-shell .editor-page .paper .editor-placeholder-indented {
+  /* Match the text-indent on the first editable paragraph. */
+  left: calc(var(--paper-margin-left, 24mm) + var(--paper-size, 16px));
+}
+.app-shell .editor-page .paper .editor-placeholder[hidden] {
+  display: none !important;
+}
+.app-shell .editor-page .paper {
+  position: relative;
+}
+.app-shell .editor-page .paper.first-line-indent .prose-editor > p,
+.app-shell .editor-page .paper.first-line-indent .prose-editor > div:not(.wbw-page-break),
+.app-shell .editor-page .paper.first-line-indent .prose-editor > h1,
+.app-shell .editor-page .paper.first-line-indent .prose-editor > h2,
+.app-shell .editor-page .paper.first-line-indent .prose-editor > h3,
+.app-shell .editor-page .paper.first-line-indent .prose-editor > blockquote,
+.app-shell .editor-page .paper.first-line-indent .prose-editor > pre,
+.app-shell .editor-page .paper.first-line-indent .prose-editor li > p {
+  text-indent: var(--paper-first-line-indent, 1em) !important;
+}
+/* 양면 보기에서도 글 줄 너비는 한 쪽의 글 영역 너비 */
+.app-shell .editor-page .paper.paper-spread .prose-editor {
+  width: calc(var(--sheet-w) - var(--paper-margin-left, 24mm) - var(--paper-margin-right, 24mm));
+}
+
+/* 쪽 나누기 표시 (Shift+Enter) */
+.app-shell .editor-page .prose-editor .wbw-page-break {
+  display: block;
+  position: relative;
+  height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  user-select: none;
+  pointer-events: none;
+}
+.app-shell .editor-page .prose-editor .wbw-page-break::after {
+  content: none;
+}
+
+/* Letter uses a continuous, single-column writing surface without sheet breaks. */
+.app-shell .editor-page .paper.paper-letter {
+  height: auto !important;
+  min-height: max(75vh, var(--sheet-h));
+  background-color: var(--surface) !important;
+  background-image: none !important;
+}
+
+@media (max-width: 650px) {
+  .app-shell .editor-page .paper-wrap { margin: 12px auto 40px; }
+}
+
+/* Hide the caret while the empty-editor hint is visible. */
+.app-shell .editor-page .paper .prose-editor:has(> p:only-child:has(> br:only-child)) { caret-color: transparent; }
+
+/* The bottom bar stays visible without changing the editor or paper layout. */
+.app-shell .editor-page > .editor-bottom-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: clamp(14px, 2vw, 28px);
+  width: 100%;
+  min-height: 56px;
+  height: 56px;
+  flex: 0 0 56px;
+  padding: 0 clamp(18px, 4.5vw, 64px);
+  border-top: 1px solid var(--line);
+  background: var(--bg);
+  box-shadow: 0 -4px 16px rgba(20, 20, 20, 0.045);
+}
+.app-shell .editor-page > .editor-bottom-bar .editor-counts {
+  flex: 1 1 auto;
+  min-width: 0;
+  justify-content: flex-start;
+  gap: 22px;
+}
+.app-shell .editor-page > .editor-bottom-bar .editor-counts > span:first-child {
+  display: inline;
+  margin-right: 0;
+}
+.app-shell .editor-page > .editor-bottom-bar .editor-save-state {
+  flex: 0 0 auto;
+  margin-left: 0;
+  white-space: nowrap;
+}
+.app-shell .editor-page > .editor-bottom-bar .editor-bottom-actions {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+@media (max-width: 650px) {
+  .app-shell .editor-page > .editor-bottom-bar {
+    min-height: 82px;
+    height: auto;
+    flex-basis: auto;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 8px 12px;
+    padding: 10px 14px;
+  }
+  .app-shell .editor-page > .editor-bottom-bar .editor-counts {
+    grid-column: 1 / -1;
+    gap: 14px;
+  }
+  .app-shell .editor-page > .editor-bottom-bar .editor-save-state {
+    grid-column: 1;
+  }
+  .app-shell .editor-page > .editor-bottom-bar .editor-bottom-actions {
+    grid-column: 2;
+    grid-row: 2;
+  }
+}
+
+/* Keep the two counters and footer actions visually separated. */
+.app-shell .editor-page > .editor-bottom-bar .editor-counts { column-gap: 18px !important; }
+.app-shell .editor-page > .editor-bottom-bar .editor-bottom-actions { gap: 16px !important; }
+
+/* Keep the stacked header rows aligned at the top and while scrolling. */
+.app-shell {
+  --wbw-topbar-height: 68px;
+  --wbw-editor-top-height: 50px;
+  --wbw-toolbar-height: 54px;
+}
+.app-shell > .topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  height: var(--wbw-topbar-height);
+  min-height: var(--wbw-topbar-height);
+  flex: 0 0 var(--wbw-topbar-height);
+  box-sizing: border-box;
+}
+.app-shell .editor-page > .editor-top {
+  position: sticky;
+  top: var(--wbw-topbar-height);
+  z-index: 19;
+  height: var(--wbw-editor-top-height);
+  min-height: var(--wbw-editor-top-height);
+  flex: 0 0 var(--wbw-editor-top-height);
+  box-sizing: border-box;
+  background: var(--bg);
+}
+.app-shell .editor-page > .toolbar {
+  position: sticky;
+  top: calc(var(--wbw-topbar-height) + var(--wbw-editor-top-height));
+  z-index: 18;
+  height: var(--wbw-toolbar-height);
+  min-height: var(--wbw-toolbar-height);
+  flex: 0 0 var(--wbw-toolbar-height);
+  box-sizing: border-box;
+}
+@media (max-width: 650px) {
+  .app-shell {
+    --wbw-editor-top-height: 44px;
+    --wbw-toolbar-height: 49px;
+  }
+}
+
+/* Keep editor and browser-PDF typography tied to the same live layout values. */
+.app-shell .editor-page .paper .prose-editor,
+.app-shell .editor-page .paper .prose-editor * {
+  letter-spacing: var(--paper-spacing) !important;
+}
+.app-shell .editor-page .paper .prose-editor > :is(p, h1, h2, h3, blockquote, pre, ul, ol) {
+  line-height: var(--paper-line) !important;
+  margin-block-start: 0;
+  margin-block-end: var(--paper-paragraph-spacing, 0.8em);
+}
+.app-shell .print-only {
+  font-size: var(--paper-size);
+  letter-spacing: var(--paper-spacing);
+  line-height: var(--paper-line);
+}
+.app-shell .print-only * {
+  letter-spacing: var(--paper-spacing) !important;
+}
+.app-shell .print-only > div > :is(p, h1, h2, h3, blockquote, pre, ul, ol) {
+  line-height: var(--paper-line) !important;
+  margin-block-start: 0;
+  margin-block-end: var(--paper-paragraph-spacing, 0.8em);
+}
+.app-shell .print-only > h1 {
+  margin: 0 0 36px;
+  font: 600 27px var(--paper-font);
+  letter-spacing: -0.04em !important;
+}
