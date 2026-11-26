@@ -5,12 +5,11 @@ import {
   AlignCenter, AlignLeft, AlignRight, ArrowDown, ArrowLeft, ArrowUpDown,
   Bold, BookOpen, Check, ChevronDown, ChevronRight, ChevronsUpDown,
   CircleHelp, Clock3, Download, FilePlus2, FileText, Folder,
-  CircleHelp, Clock3, Download, FilePlus2, FileText, Folder,
   FolderPlus, Italic, Link2, LogOut, Menu, Minus, MoreHorizontal, PanelLeftClose,
   Plus, Printer, Search, Settings, Share2, SlidersHorizontal, Sparkles,
   Trash2, Underline, X
 } from 'lucide-react';
-import { getCurrentUser, startGoogleLogin, signOut, getFolders, createFolder as apiCreateFolder, updateFolder as apiUpdateFolder, removeFolder as apiRemoveFolder, getDocuments, getDocument, createDocument, updateDocument, moveDocument, deleteDocument, getShares, createShare, updateShare, getSettings, updateSettings as apiUpdateSettings, getPublicShare, verifyPublicShare, downloadDocumentPdf } from './backend.js';
+import { getCurrentUser, startGoogleLogin, signOut, getFolders, createFolder as apiCreateFolder, updateFolder as apiUpdateFolder, removeFolder as apiRemoveFolder, getDocuments, getDocument, createDocument, updateDocument, moveDocument, deleteDocument, getShares, createShare, updateShare, getSettings, getFonts, updateSettings as apiUpdateSettings, getPublicShare, verifyPublicShare, downloadDocumentPdf } from './backend.js';
 
 const initial = {
   folders: [
@@ -98,7 +97,6 @@ function htmlToTipTap(html, attrs = {}) {
   const parsed = new DOMParser().parseFromString(html || '<p></p>', 'text/html');
   const metaStyle = attrs?.wbw?.style || {};
   const defaultTextStyle = {
-    fontFamily: metaStyle.fontFamily,
     fontSize: metaStyle.fontSize == null ? undefined : `${metaStyle.fontSize}px`,
     letterSpacing: metaStyle.letterSpacing,
     color: metaStyle.color
@@ -126,8 +124,6 @@ function htmlToTipTap(html, attrs = {}) {
     if (size) attrs.fontSize = size;
     const color = node.style?.color || (tag === 'font' ? node.getAttribute('color') : null);
     if (color) attrs.color = color;
-    const letterSpacing = node.style?.letterSpacing;
-    if (letterSpacing) attrs.letterSpacing = letterSpacing;
     if (Object.keys(attrs).length) marks.push({ type: 'textStyle', attrs });
     if (style.includes('text-decoration') && style.includes('underline') && !marks.some(mark => mark.type === 'underline')) marks.push({ type: 'underline' });
     return content.map(item => marks.length ? { ...item, marks: [...(item.marks || []), ...marks] } : item);
@@ -148,12 +144,10 @@ function htmlToTipTap(html, attrs = {}) {
       const attrs = {};
       if (type === 'heading') attrs.level = Number(tag[1]);
       if (node.style?.textAlign) attrs.textAlign = node.style.textAlign;
-      if (node.style?.lineHeight) attrs.lineHeight = Number.parseFloat(node.style.lineHeight);
-      if (node.style?.marginBottom) attrs.paragraphSpacing = Number.parseFloat(node.style.marginBottom) || 0;
       const textIndent = node.style?.textIndent ? Number.parseFloat(node.style.textIndent) : Number(defaultIndent);
       attrs.textIndent = Number.isFinite(textIndent) ? textIndent : (defaultIndent ? 1 : 0);
-      if (attrs.lineHeight == null && metaStyle.lineHeight != null) attrs.lineHeight = Number(metaStyle.lineHeight);
-      if (attrs.paragraphSpacing == null && metaStyle.paragraphSpacing != null) attrs.paragraphSpacing = Number(metaStyle.paragraphSpacing);
+      if (metaStyle.lineHeight != null) attrs.lineHeight = Number(metaStyle.lineHeight);
+      if (metaStyle.paragraphSpacing != null) attrs.paragraphSpacing = Number(metaStyle.paragraphSpacing);
       return [{ type, ...(Object.keys(attrs).length ? { attrs } : {}), content: inline(node) }];
     }
     return inline(node).length ? [{ type: 'paragraph', content: inline(node) }] : [];
@@ -166,6 +160,7 @@ function htmlToTipTap(html, attrs = {}) {
       if (Object.keys(defaultTextStyle).length || styleMarks.length) {
         const explicit = [...styleMarks].reverse().reduce((result, mark) => ({ ...result, ...(mark.attrs || {}) }), {});
         const combinedStyle = { ...defaultTextStyle, ...explicit };
+        if (explicit.fontFamily && metaStyle.fontFamily && uiFont(explicit.fontFamily) === uiFont(metaStyle.fontFamily)) delete combinedStyle.fontFamily;
         if (combinedStyle.fontFamily) combinedStyle.fontFamily = apiFont(combinedStyle.fontFamily);
         return { ...node, marks: [...marks.filter(mark => mark.type !== 'textStyle'), { type: 'textStyle', attrs: combinedStyle }] };
       }
@@ -176,7 +171,8 @@ function htmlToTipTap(html, attrs = {}) {
   };
   return { type: 'doc', ...(Object.keys(attrs).length ? { attrs } : {}), content: (content.length ? content : [{ type: 'paragraph', attrs: { textIndent: defaultIndent ? 1 : 0 } }]).map(applyDefaultStyles) };
 }
-function tipTapToHtml(doc) {
+function tipTapToHtml(doc, defaultFont = doc?.attrs?.wbw?.style?.fontFamily) {
+  const defaultUiFont = defaultFont ? uiFont(defaultFont) : null;
   const renderInline = node => {
     if (node.type === 'hardBreak') return '<br>';
     if (node.type !== 'text') return '';
@@ -186,7 +182,7 @@ function tipTapToHtml(doc) {
       else if (mark.type === 'italic') out = `<em>${out}</em>`;
       else if (mark.type === 'underline') out = `<u>${out}</u>`;
       else if (mark.type === 'strike') out = `<s>${out}</s>`;
-      else if (mark.type === 'textStyle') { const a = mark.attrs || {}; const css = [`font-family:${a.fontFamily || ''}`, `font-size:${a.fontSize || ''}`, `letter-spacing:${a.letterSpacing || ''}`, `color:${a.color || ''}`].filter(x => !x.endsWith(':')).join(';'); if (css) out = `<span style="${escapeHtml(css)}">${out}</span>`; }
+      else if (mark.type === 'textStyle') { const a = mark.attrs || {}; const fontFamily = a.fontFamily && (!defaultUiFont || uiFont(a.fontFamily) !== defaultUiFont) ? a.fontFamily : ''; const css = [`font-family:${fontFamily}`, `font-size:${a.fontSize || ''}`, `color:${a.color || ''}`].filter(x => !x.endsWith(':')).join(';'); if (css) out = `<span style="${escapeHtml(css)}">${out}</span>`; }
     }
     return out;
   };
@@ -227,7 +223,7 @@ function normalizeServerDocument(serverDoc, fallback = {}, prefs = {}) {
     backendId: serverDoc?.id ?? fallback.backendId,
     folder: (serverDoc?.folderId ?? fallback.folderId ?? fallback.folder) == null ? null : String(serverDoc?.folderId ?? fallback.folderId ?? fallback.folder),
     title: serverDoc?.title ?? fallback.title ?? '',
-    body: content ? tipTapToHtml(content) : (serverDoc?.body ?? fallback.body ?? ''),
+    body: content ? tipTapToHtml(content, serverDoc?.fontFamily ?? serverDoc?.font ?? fallback.font ?? style.fontFamily ?? prefs.font) : (serverDoc?.body ?? fallback.body ?? ''),
     contentJson: content,
     page: pageSize,
     viewMode: serverDoc?.viewMode ?? fallback.viewMode ?? layout.viewMode ?? 'single',
@@ -274,6 +270,7 @@ const paperStyle = draft => ({
   '--paper-size': `${draft.size}px`,
   '--paper-spacing': `${draft.spacing}px`,
   '--paper-line': draft.line,
+  '--paper-paragraph-spacing': `${draft.paragraphSpacing ?? 0.8}em`,
   '--paper-color': draft.color,
   '--paper-margin-top': `${draft.marginTop ?? 24}mm`,
   '--paper-margin-right': `${draft.marginRight ?? 24}mm`,
@@ -375,10 +372,10 @@ function paginateEditor(editor, geometry, margins) {
 }
 
 const randomNames = ['말하는 하마', '느긋한 문어', '잠든 고양이', '산책하는 구름', '수줍은 여우', '책 읽는 펭귄', '느린 거북이'];
-const API_FONT_FAMILIES = ['Noto Serif KR', 'Noto Sans KR', 'Nanum Myeongjo', 'Nanum Gothic', 'Gowun Batang', 'Gowun Dodum'];
+const API_FONT_FAMILIES = ['Pretendard', 'Noto Serif KR', 'Noto Sans KR', 'Nanum Myeongjo', 'Nanum Gothic', 'Gowun Batang', 'Gowun Dodum'];
 const apiFont = font => {
   const name = String(font || '').split(',')[0].replace(/["']/g, '').trim();
-  const mapped = ({ Pretendard: 'Noto Sans KR', '맑은 고딕': 'Noto Sans KR', 'Malgun Gothic': 'Noto Sans KR', 'sans-serif': 'Noto Sans KR', Georgia: 'Noto Serif KR', serif: 'Noto Serif KR', 바탕: 'Nanum Myeongjo', Batang: 'Nanum Myeongjo' })[name] || name;
+  const mapped = ({ Pretendard: 'Pretendard', '맑은 고딕': 'Noto Sans KR', 'Malgun Gothic': 'Noto Sans KR', 'sans-serif': 'Noto Sans KR', Georgia: 'Noto Serif KR', serif: 'Noto Serif KR', 바탕: 'Nanum Myeongjo', Batang: 'Nanum Myeongjo' })[name] || name;
   return API_FONT_FAMILIES.includes(mapped) ? mapped : 'Noto Serif KR';
 };
 const uiFont = font => ({ 'Noto Sans KR': 'Pretendard', 'Noto Serif KR': 'Georgia', 'Nanum Myeongjo': '바탕', 'Nanum Gothic': '맑은 고딕', 'Gowun Batang': '바탕', 'Gowun Dodum': 'Pretendard' }[font] || 'Pretendard');
@@ -504,7 +501,8 @@ export default function App() {
   const [notice, setNotice] = useState('');
   const [toastNotice, setToastNotice] = useState('');
   const [deleteConfirmName, setDeleteConfirmName] = useState('');
-  const [draft, setDraft] = useState({ title: '', body: '', page: 'A4', viewMode: 'single', visibility: '비공개', marginTop: 24, marginRight: 24, marginBottom: 24, marginLeft: 24, firstLineIndent: true, font: 'Pretendard', size: 16, spacing: 0, line: 1.9, color: '#252525' });
+  const [pdfFontFamilies, setPdfFontFamilies] = useState([]);
+  const [draft, setDraft] = useState({ title: '', body: '', page: 'A4', viewMode: 'single', visibility: '비공개', marginTop: 24, marginRight: 24, marginBottom: 24, marginLeft: 24, firstLineIndent: true, font: 'Pretendard', size: 16, spacing: 0, line: 1.9, color: '#252525', paragraphSpacing: 0.8 });
   const [inlineFormat, setInlineFormat] = useState({});
   const [sizeInput, setSizeInput] = useState('16');
   const [passwordDraft, setPasswordDraft] = useState('');
@@ -565,11 +563,7 @@ export default function App() {
   useEffect(() => {
     let active = true;
     getCurrentUser().then(user => {
-    getCurrentUser().then(user => {
       if (!active) return;
-      setAuthUser(user);
-      syncUserNickname(user);
-      if (new URLSearchParams(window.location.search).get('error') === 'oauth') setAuthError('Google 로그인에 실패했어요. 잠시 후 다시 시도해 주세요.');
       setAuthUser(user);
       syncUserNickname(user);
       if (new URLSearchParams(window.location.search).get('error') === 'oauth') setAuthError('Google 로그인에 실패했어요. 잠시 후 다시 시도해 주세요.');
@@ -577,10 +571,8 @@ export default function App() {
     }).catch(error => {
       if (!active) return;
       setAuthError(error?.message || '백엔드 서버에 연결할 수 없어요. 서버 실행 상태를 확인해 주세요.');
-      setAuthError(error?.message || '백엔드 서버에 연결할 수 없어요. 서버 실행 상태를 확인해 주세요.');
       setAuthReady(true);
     });
-    return () => { active = false; };
     return () => { active = false; };
   }, []);
   useEffect(() => {
@@ -588,8 +580,10 @@ export default function App() {
     let active = true;
     (async () => {
       try {
-        const [serverFolders, page, serverSettings] = await Promise.all([getFolders(), getDocuments(), getSettings()]);
+        const [serverFolders, page, serverSettings, serverFonts] = await Promise.all([getFolders(), getDocuments(), getSettings(), getFonts().catch(() => [])]);
         if (!active) return;
+        const availablePdfFonts = (serverFonts || []).filter(font => font.pdfAvailable).map(font => font.family);
+        setPdfFontFamilies(availablePdfFonts);
         const folders = (serverFolders || []).map(folder => ({ id: String(folder.id), backendId: folder.id, name: folder.name, parent: null, sortOrder: folder.sortOrder ?? 0, documentCount: folder.documentCount ?? 0 }));
         const docs = await Promise.all((page?.items || []).map(async item => {
           let doc = { id: String(item.id), backendId: item.id, folder: item.folderId == null ? null : String(item.folderId), title: item.title || '', body: '', preview: item.preview || '', authorNickname: data.prefs.nickname, version: item.version, created: item.createdAt ? Date.parse(item.createdAt) : Date.now(), updated: item.updatedAt ? Date.parse(item.updatedAt) : Date.now(), uploaded: false, visibility: '비공개' };
@@ -608,6 +602,10 @@ export default function App() {
         }));
         setData(current => ({ ...current, folders, docs }));
         settingsCacheRef.current = serverSettings;
+        if (serverSettings.fontFamily === 'Noto Sans KR' && availablePdfFonts.includes('Pretendard')) {
+          const migratedSettings = { ...apiSettingsFromPrefs({ ...data.prefs, font: 'Pretendard' }, serverSettings), fontFamily: 'Pretendard' };
+          try { settingsCacheRef.current = await apiUpdateSettings(migratedSettings); } catch { /* Keep the existing font preference if the settings update is temporarily unavailable. */ }
+        }
         setData(current => ({ ...current, prefs: { ...current.prefs, theme: serverSettings.theme === 'DARK' ? 'black' : serverSettings.theme === 'CUSTOM' ? (serverSettings.backgroundColor === themePalettes.sky.background ? 'sky' : serverSettings.backgroundColor === themePalettes.sand.background ? 'sand' : serverSettings.backgroundColor === themePalettes.gray.background ? 'gray' : 'white') : 'white', font: uiFont(serverSettings.fontFamily), fontSize: serverSettings.fontSize, letterSpacing: serverSettings.letterSpacing, lineHeight: serverSettings.lineHeight, paragraphSpacing: serverSettings.paragraphSpacing } }));
         if (!folders.some(folder => folder.id === activeFolder)) setActiveFolder(null);
       } catch (error) {
@@ -696,7 +694,7 @@ export default function App() {
     let alive = true;
     document.fonts?.ready?.then(() => { if (alive) layoutPagesRef.current?.(); });
     return () => { alive = false; };
-  }, [view, selectedDoc, draft.body, draft.page, draft.viewMode, draft.marginTop, draft.marginBottom, draft.marginLeft, draft.marginRight, draft.font, draft.size, draft.spacing, draft.line, draft.firstLineIndent, geometry.double, geometry.sheetW, geometry.sheetH]);
+  }, [view, selectedDoc, draft.body, draft.page, draft.viewMode, draft.marginTop, draft.marginBottom, draft.marginLeft, draft.marginRight, draft.font, draft.size, draft.spacing, draft.line, draft.paragraphSpacing, draft.firstLineIndent, geometry.double, geometry.sheetW, geometry.sheetH]);
   layoutPagesRef.current = layoutPages;
   useEffect(() => {
     setSizeInput(String(inlineFormat.size ?? draft.size));
@@ -718,6 +716,10 @@ export default function App() {
     setPageCount(current => (current === count ? current : count));
   }
   function updatePrefs(key, value) {
+    if (authUser && key === 'font' && value === 'Pretendard' && !pdfFontFamilies.includes('Pretendard')) {
+      setNotice('Pretendard PDF 글꼴은 백엔드 배포 후 선택할 수 있어요.');
+      return;
+    }
     setData(d => ({
       ...d,
       prefs: { ...d.prefs, [key]: value },
@@ -775,7 +777,7 @@ export default function App() {
     const storedSpacing = Number.parseFloat(doc.spacing);
     const spacing = Number.isFinite(storedSpacing) ? (typeof doc.spacing === 'string' && doc.spacing.trim().endsWith('em') ? storedSpacing * (doc.size || 16) : storedSpacing) : 0;
     const page = String(doc.page || 'A4').toUpperCase() === 'LETTER' ? 'Letter' : (doc.page || 'A4');
-    setSelectedDoc(doc.id); setDraftFolder(doc.folder ?? null); setDraft({ title: doc.title === '제목 없음' ? '' : (doc.title || ''), body: doc.body || '<p><br></p>', page, viewMode: page === 'Letter' ? 'single' : (doc.viewMode || 'single'), visibility: doc.visibility || '비공개', marginTop: doc.marginTop ?? oldMargin, marginRight: doc.marginRight ?? oldMargin, marginBottom: doc.marginBottom ?? oldMargin, marginLeft: doc.marginLeft ?? oldMargin, firstLineIndent: doc.firstLineIndent ?? doc.contentJson?.attrs?.wbw?.layout?.firstLineIndent ?? true, font: doc.font || data.prefs.font, size: doc.size || 16, spacing, line: doc.line || 1.9, color: doc.color || '#252525' }); setSaveState('저장됨'); setView('editor'); setProfileOpen(false);
+    setSelectedDoc(doc.id); setDraftFolder(doc.folder ?? null); setDraft({ title: doc.title === '제목 없음' ? '' : (doc.title || ''), body: doc.body || '<p><br></p>', page, viewMode: page === 'Letter' ? 'single' : (doc.viewMode || 'single'), visibility: doc.visibility || '비공개', marginTop: doc.marginTop ?? oldMargin, marginRight: doc.marginRight ?? oldMargin, marginBottom: doc.marginBottom ?? oldMargin, marginLeft: doc.marginLeft ?? oldMargin, firstLineIndent: doc.firstLineIndent ?? doc.contentJson?.attrs?.wbw?.layout?.firstLineIndent ?? true, font: doc.font || data.prefs.font, size: doc.size || 16, spacing, line: doc.line || 1.9, color: doc.color || '#252525', paragraphSpacing: doc.paragraphSpacing ?? data.prefs.paragraphSpacing ?? 0.8 }); setSaveState('저장됨'); setView('editor'); setProfileOpen(false);
   }
   async function newDoc() {
     const doc = { id: crypto.randomUUID(), folder: activeFolder, title: '', body: '<p><br></p>', updated: Date.now(), visibility: '비공개', uploaded: false };
@@ -818,7 +820,7 @@ export default function App() {
       } catch (error) { setSaveState('저장 실패'); setNotice(error.message || '서버에 저장하지 못했어요.'); return false; }
     }
     setData(d => {
-      const savedFields = { title: next.title || '제목 없음', body: next.body, preview: htmlToPlainText(next.body).split('\n')[0] || '', page: next.page, viewMode: next.viewMode || 'single', visibility: next.visibility || '비공개', marginTop: next.marginTop, marginRight: next.marginRight, marginBottom: next.marginBottom, marginLeft: next.marginLeft, firstLineIndent: next.firstLineIndent !== false, font: next.font, size: next.size, spacing: next.spacing, line: next.line, color: next.color, theme: d.prefs.theme, updated: now };
+      const savedFields = { title: next.title || '제목 없음', body: next.body, preview: htmlToPlainText(next.body).split('\n')[0] || '', page: next.page, viewMode: next.viewMode || 'single', visibility: next.visibility || '비공개', marginTop: next.marginTop, marginRight: next.marginRight, marginBottom: next.marginBottom, marginLeft: next.marginLeft, firstLineIndent: next.firstLineIndent !== false, font: next.font, size: next.size, spacing: next.spacing, line: next.line, paragraphSpacing: next.paragraphSpacing ?? d.prefs.paragraphSpacing ?? 0.8, color: next.color, theme: d.prefs.theme, updated: now };
       const exists = d.docs.some(doc => doc.id === selectedDoc);
       return { ...d, docs: exists
         ? d.docs.map(doc => doc.id === selectedDoc ? { ...doc, created: doc.created ?? doc.updated ?? now, ...savedFields } : doc)
@@ -839,7 +841,7 @@ export default function App() {
     clearTimeout(timerRef.current); timerRef.current = setTimeout(() => saveDraft(next), 900);
   }
   function resetLayout() {
-    const next = { ...draft, page: 'A4', viewMode: 'single', marginTop: 24, marginRight: 24, marginBottom: 24, marginLeft: 24, firstLineIndent: true, spacing: 0, line: 1.9 };
+    const next = { ...draft, page: 'A4', viewMode: 'single', marginTop: 24, marginRight: 24, marginBottom: 24, marginLeft: 24, firstLineIndent: true, spacing: 0, line: 1.9, paragraphSpacing: data.prefs.paragraphSpacing ?? 0.8 };
     setDraft(next); setSaveState('수정 중…');
     clearTimeout(timerRef.current); timerRef.current = setTimeout(() => saveDraft(next), 900);
   }
@@ -1029,15 +1031,15 @@ export default function App() {
     event.preventDefault();
     event.dataTransfer.dropEffect = 'none';
   }
-  function onBodyInput() {
+  function onBodyInput(overrides = {}) {
     if (!editorRef.current) return;
-    const next = { ...draft, body: cleanEditorHtml(editorRef.current) };
+    const next = { ...draft, ...overrides, body: cleanEditorHtml(editorRef.current) };
     setDraft(next);
     setSaveState('수정 중…');
     const now = Date.now();
     const preview = htmlToPlainText(next.body).split('\n')[0] || '';
     setData(current => {
-      const optimistic = { title: next.title || '', body: next.body, preview, page: next.page, viewMode: next.viewMode, marginTop: next.marginTop, marginRight: next.marginRight, marginBottom: next.marginBottom, marginLeft: next.marginLeft, firstLineIndent: next.firstLineIndent !== false, font: next.font, size: next.size, spacing: next.spacing, line: next.line, color: next.color, updated: now };
+      const optimistic = { title: next.title || '', body: next.body, preview, page: next.page, viewMode: next.viewMode, marginTop: next.marginTop, marginRight: next.marginRight, marginBottom: next.marginBottom, marginLeft: next.marginLeft, firstLineIndent: next.firstLineIndent !== false, font: next.font, size: next.size, spacing: next.spacing, line: next.line, paragraphSpacing: next.paragraphSpacing ?? data.prefs.paragraphSpacing ?? 0.8, color: next.color, updated: now };
       const exists = current.docs.some(doc => doc.id === selectedDoc);
       return { ...current, docs: exists
         ? current.docs.map(doc => doc.id === selectedDoc ? { ...doc, ...optimistic } : doc)
@@ -1052,14 +1054,13 @@ export default function App() {
       ? selection.getRangeAt(0).cloneRange()
       : editorSelectionRef.current;
     if (!selectedRange || selectedRange.collapsed || !editorRef.current?.contains(selectedRange.commonAncestorContainer)) {
-      changeDraft('color', color);
+      applyWholeDocumentStyle('color', color, { color });
       return;
     }
     applyStyleToRange(selectedRange, { color });
     setInlineFormat(current => ({ ...current, color }));
-    onBodyInput();
   }
-  function applyStyleToRange(range, styles, focusEditor = true) {
+  function applyStyleToRange(range, styles, focusEditor = true, draftOverride = null, restoreRange = null) {
     const editor = editorRef.current;
     if (!editor || !range || range.collapsed || !editor.contains(range.commonAncestorContainer)) return;
     const before = captureEditorSnapshot();
@@ -1073,7 +1074,8 @@ export default function App() {
       if (end > start) textNodes.push({ node, start, end });
     }
     if (!textNodes.length) return;
-    for (const item of textNodes.reverse()) {
+    const selectedSegments = new Map();
+    for (const item of [...textNodes].reverse()) {
       let selectedNode = item.node;
       if (item.end < selectedNode.nodeValue.length) selectedNode.splitText(item.end);
       if (item.start > 0) selectedNode = selectedNode.splitText(item.start);
@@ -1081,10 +1083,19 @@ export default function App() {
       Object.assign(span.style, styles);
       selectedNode.parentNode.insertBefore(span, selectedNode);
       span.appendChild(selectedNode);
+      selectedSegments.set(item.node, selectedNode);
     }
-    preserveEditorRange(range, focusEditor);
-    recordEditorChange(before);
-    onBodyInput();
+    const first = selectedSegments.get(textNodes[0].node);
+    const last = selectedSegments.get(textNodes[textNodes.length - 1].node);
+    const restoredRange = document.createRange();
+    restoredRange.setStart(first, 0);
+    restoredRange.setEnd(last, last.nodeValue.length);
+    const nextRange = restoreRange && editor.contains(restoreRange.commonAncestorContainer) ? restoreRange : restoredRange;
+    preserveEditorRange(nextRange, focusEditor);
+    const after = captureEditorSnapshot();
+    if (draftOverride) after.defaults[draftOverride.key] = draftOverride.value;
+    recordEditorChange(before, after);
+    onBodyInput(draftOverride ? { [draftOverride.key]: draftOverride.value } : {});
   }
   function exec(command, value) {
     const editor = editorRef.current;
@@ -1137,13 +1148,30 @@ export default function App() {
       selection?.addRange(savedRange);
     });
   }
+  function applyWholeDocumentStyle(key, value, styles) {
+    const editor = editorRef.current;
+    if (!editor) { changeDraft(key, value); return; }
+    const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+    let hasText = false;
+    while (walker.nextNode()) {
+      if (walker.currentNode.nodeValue?.length) { hasText = true; break; }
+    }
+    if (!hasText) { changeDraft(key, value); return; }
+    const restoreRange = editorSelectionRef.current && editor.contains(editorSelectionRef.current.commonAncestorContainer)
+      ? editorSelectionRef.current.cloneRange()
+      : null;
+    const wholeDocument = document.createRange();
+    wholeDocument.selectNodeContents(editor);
+    applyStyleToRange(wholeDocument, styles, false, { key, value }, restoreRange);
+    setInlineFormat({});
+  }
   function changeFont(font) {
     const selection = window.getSelection();
     const range = selection?.rangeCount && editorRef.current?.contains(selection.anchorNode) && !selection.isCollapsed
       ? selection.getRangeAt(0).cloneRange()
       : editorSelectionRef.current;
     if (!range || range.collapsed || !editorRef.current?.contains(range.commonAncestorContainer)) {
-      changeDraft('font', font);
+      applyWholeDocumentStyle('font', font, { fontFamily: font });
       return;
     }
     applyStyleToRange(range, { fontFamily: font });
@@ -1159,7 +1187,7 @@ export default function App() {
       changeDraft('size', size);
       return;
     }
-    applyStyleToRange(range, { fontSize: `${size}px` }, false);
+    applyStyleToRange(range, { fontSize: `${size}px` }, true);
     setInlineFormat(current => ({ ...current, size }));
   }
   function createFolder() {
@@ -1258,7 +1286,6 @@ export default function App() {
   async function handleGoogleLogin() {
     setAuthError(''); setAuthSuccess('');
     setAuthLoading(true);
-    startGoogleLogin();
     startGoogleLogin();
   }
   function doSignOut() {
@@ -1387,6 +1414,7 @@ export default function App() {
     loading={authLoading} error={authError} onGoogle={handleGoogleLogin}
     onPreview={() => { setPreviewMode(true); setAuthError(''); setAuthSuccess(''); }}
   />;
+  if (authUser && !apiReady) return <main className={`app-shell login-shell ${themeClass}`}><div className="auth-loading"><span className="brand-mark">w.</span><span>서재를 불러오고 있어요</span></div></main>;
 
   if (view === 'reader' && currentDoc) return <main className={`app-shell ${themeClass}`} style={{ '--app-font': data.prefs.font }}><ReadDocument doc={currentDoc} theme={data.prefs.theme || 'white'} readerDefaults={data.prefs} viewerNickname={data.prefs.nickname} viewerEmail={authUser?.email || '로컬 미리보기 계정'} isShared={false} onBack={() => setView('library')} onEdit={() => editDoc(currentDoc)} onDelete={() => deleteDoc(currentDoc)} onOpenSettings={() => { setView('library'); setSettingsOpen(true); }} dialog={dialog} dialogInput={dialogInput} setDialogInput={setDialogInput} closeDialog={closeDialog} notice={notice} clearNotice={() => setNotice('')}/></main>;
 
@@ -1429,14 +1457,13 @@ export default function App() {
 
     {view === 'editor' && <section className="editor-page" onKeyDownCapture={handleEditorKeyDown}>
       <div className="editor-top"><button className="back-link" onClick={()=>{clearTimeout(timerRef.current);saveDraft();setView('library')}}><ArrowLeft size={17}/>내 서재</button><div className="editor-breadcrumb">{folderLabel(data.folders.find(f=>f.id===draftFolder))}<ChevronRight size={14}/><span>{draft.title || '새 글'}</span></div><div className="editor-user"><span className="save-label"><i className={saveState==='저장됨'?'saved':''}/>{saveState}</span></div></div>
-      <div className="toolbar" onMouseDownCapture={()=>rememberEditorSelection()}><div className="tool-group"><label className="select-wrap"><select value={draft.page} onChange={e=>changeDraft('page',e.target.value)}><option>A4</option><option>A5</option><option>Letter</option></select><ChevronDown size={13}/></label><button className="toolbar-text" onClick={()=>setModal('layout')}>레이아웃</button></div><span className="tool-divider"/><div className="tool-group"><label className="select-wrap font-select"><select value={inlineFormat.font || draft.font} onChange={e=>changeFont(e.target.value)}><option>Pretendard</option><option>Georgia</option><option>바탕</option><option>맑은 고딕</option><option>serif</option></select><ChevronDown size={13}/></label><label className="numeric-toolbar"><input type="number" min="1" max="72" step="1" aria-label="글자 크기" value={sizeInput} onChange={e=>{const raw=e.target.value;setSizeInput(raw);const value=Number(raw);if(raw!==''&&Number.isFinite(value)&&value>=1&&value<=72)changeFontSize(value);}} onBlur={()=>{const value=Number(sizeInput);if(sizeInput===''||!Number.isFinite(value)||value<1||value>72)setSizeInput(String(inlineFormat.size??draft.size));restoreEditorSelectionFocus();}} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();e.currentTarget.blur();}}}/><span>pt</span></label><label className="icon-button color-picker-button" title="글자색"><span className="color-dot" style={{background:inlineFormat.color || draft.color}}/><input id="color-picker" className="hidden-input" aria-label="글자색 선택" type="color" value={inlineFormat.color || draft.color} onChange={e=>applyTextColor(e.target.value)}/></label></div><span className="tool-divider"/><div className="tool-group"><IconButton title="굵게" onClick={()=>exec('bold')}><Bold size={17}/></IconButton><IconButton title="기울임" onClick={()=>exec('italic')}><Italic size={17}/></IconButton><IconButton title="밑줄" onClick={()=>exec('underline')}><Underline size={17}/></IconButton></div><span className="tool-divider"/><div className="tool-group"><IconButton title="왼쪽 정렬" onClick={()=>exec('justifyLeft')}><AlignLeft size={17}/></IconButton><IconButton title="가운데 정렬" onClick={()=>exec('justifyCenter')}><AlignCenter size={17}/></IconButton><IconButton title="오른쪽 정렬" onClick={()=>exec('justifyRight')}><AlignRight size={17}/></IconButton></div><span className="tool-divider"/><div className="tool-group layout-tweaks"><button className="toolbar-text" onClick={()=>setModal('layout')}>자간 · 줄 간격</button></div><div className="toolbar-spacer"/><button className="button button-light share-button" onClick={()=>setModal('upload')}><Share2 size={15}/>업로드</button><button className="button button-dark export-button" onClick={()=>setModal('export')}><Download size={15}/>내보내기</button></div>
-      <div className="writing-workspace" ref={workspaceRef}><div className={`paper-wrap ${geometry.double?'paper-wrap-double':''}`} style={wrapStyle}><div className={`paper ${draft.page === 'Letter' ? 'paper-letter' : 'paper-paged'} ${geometry.double?'paper-spread':''} ${geometry.double && pageCount % 2 === 1 ? 'paper-odd' : ''} ${draft.firstLineIndent===false?'':'first-line-indent'}`} style={paperInlineStyle} onMouseDown={handlePaperMouseDown}><div ref={editorRef} className="prose-editor" contentEditable suppressContentEditableWarning onBeforeInput={handleEditorBeforeInput} onInput={handleEditorInput} onPaste={handleEditorMediaTransfer} onDragOver={handleEditorDragOver} onDrop={handleEditorMediaTransfer} onMouseDown={handleEmptyEditorMouseDown} onMouseUp={()=>rememberEditorSelection(true)} onKeyUp={()=>rememberEditorSelection(true)} /><span className={`editor-placeholder${draft.firstLineIndent === false ? '' : ' editor-placeholder-indented'}`} aria-hidden="true" hidden={hasEditorInput(draft.body)}>이곳에서 글을 시작하세요.</span></div></div></div>
-      <footer className="editor-footer editor-bottom-bar"><div className="editor-counts"><span>공백 포함 <b><i>{countChars(draft.body).length.toLocaleString('ko-KR')}</i><span>자</span></b></span><span>공백 미포함 <b><i>{countChars(draft.body).replace(/\s/g,'').length.toLocaleString('ko-KR')}</i><span>자</span></b></span></div><span className="editor-save-state"><span className="save-mini"/> {saveState}</span><div className="editor-bottom-actions"><button className="button button-light share-button" onClick={()=>setModal('upload')}><Share2 size={15}/>업로드</button><button className="button button-dark export-button" onClick={()=>setModal('export')}><Download size={15}/>내보내기</button></div></footer>
+      <div className="toolbar" onMouseDownCapture={event=>{rememberEditorSelection();if(event.target.closest('button'))event.preventDefault();}}><div className="tool-group"><label className="select-wrap"><select value={draft.page} onChange={e=>changeDraft('page',e.target.value)}><option>A4</option><option>A5</option><option>Letter</option></select><ChevronDown size={13}/></label><button className="toolbar-text" onClick={()=>setModal('layout')}>레이아웃</button></div><span className="tool-divider"/><div className="tool-group"><label className="select-wrap font-select"><select value={inlineFormat.font || draft.font} onChange={e=>changeFont(e.target.value)}><option>Pretendard</option><option>Georgia</option><option>바탕</option><option>맑은 고딕</option><option>serif</option></select><ChevronDown size={13}/></label><label className="numeric-toolbar"><input type="number" min="1" max="72" step="1" aria-label="글자 크기" value={sizeInput} onChange={e=>{const raw=e.target.value;setSizeInput(raw);const value=Number(raw);if(raw!==''&&Number.isFinite(value)&&value>=1&&value<=72)changeFontSize(value);}} onBlur={()=>{const value=Number(sizeInput);if(sizeInput===''||!Number.isFinite(value)||value<1||value>72)setSizeInput(String(inlineFormat.size??draft.size));restoreEditorSelectionFocus();}} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();e.currentTarget.blur();}}}/><span>pt</span></label><label className="icon-button color-picker-button" title="글자색"><span className="color-dot" style={{background:inlineFormat.color || draft.color}}/><input id="color-picker" className="hidden-input" aria-label="글자색 선택" type="color" value={inlineFormat.color || draft.color} onChange={e=>applyTextColor(e.target.value)}/></label></div><span className="tool-divider"/><div className="tool-group"><IconButton title="굵게" onClick={()=>exec('bold')}><Bold size={17}/></IconButton><IconButton title="기울임" onClick={()=>exec('italic')}><Italic size={17}/></IconButton><IconButton title="밑줄" onClick={()=>exec('underline')}><Underline size={17}/></IconButton></div><span className="tool-divider"/><div className="tool-group"><IconButton title="왼쪽 정렬" onClick={()=>exec('justifyLeft')}><AlignLeft size={17}/></IconButton><IconButton title="가운데 정렬" onClick={()=>exec('justifyCenter')}><AlignCenter size={17}/></IconButton><IconButton title="오른쪽 정렬" onClick={()=>exec('justifyRight')}><AlignRight size={17}/></IconButton></div><span className="tool-divider"/><div className="tool-group layout-tweaks"><button className="toolbar-text" onClick={()=>setModal('layout')}>자간 · 줄 간격</button></div><div className="toolbar-spacer"/></div>
+      <div className="writing-workspace" ref={workspaceRef}><div className={`paper-wrap ${geometry.double?'paper-wrap-double':''}`} style={wrapStyle}><div className={`paper ${draft.page === 'Letter' ? 'paper-letter' : 'paper-paged'} ${geometry.double?'paper-spread':''} ${geometry.double && pageCount % 2 === 1 ? 'paper-odd' : ''} ${draft.firstLineIndent===false?'':'first-line-indent'}`} style={paperInlineStyle} onMouseDown={handlePaperMouseDown}><div ref={editorRef} className="prose-editor" contentEditable spellCheck={false} suppressContentEditableWarning onBeforeInput={handleEditorBeforeInput} onInput={handleEditorInput} onPaste={handleEditorMediaTransfer} onDragOver={handleEditorDragOver} onDrop={handleEditorMediaTransfer} onMouseDown={handleEmptyEditorMouseDown} onMouseUp={()=>rememberEditorSelection(true)} onKeyUp={()=>rememberEditorSelection(true)} /><span className={`editor-placeholder${draft.firstLineIndent === false ? '' : ' editor-placeholder-indented'}`} aria-hidden="true" hidden={hasEditorInput(draft.body)}>이곳에서 글을 시작하세요.</span></div></div></div>
+      <footer className="editor-footer editor-bottom-bar"><div className="editor-counts" style={{ columnGap: 18 }}><span>공백 포함 <b><i>{countChars(draft.body).length.toLocaleString('ko-KR')}</i><span>자</span></b></span><span style={{ marginLeft: 18 }}>공백 미포함 <b><i>{countChars(draft.body).replace(/\s/g,'').length.toLocaleString('ko-KR')}</i><span>자</span></b></span></div><div className="editor-bottom-actions" style={{ gap: 18 }}><button className="button button-light share-button" onClick={()=>setModal('upload')}><Share2 size={15}/>업로드</button><button className="button button-dark export-button" style={{ marginLeft: 18 }} onClick={()=>setModal('export')}><Download size={15}/>내보내기</button></div></footer>
     </section>}
 
     {profileOpen && <><div className="drawer-scrim" onClick={()=>setProfileOpen(false)}/><aside className="profile-drawer"><header className="drawer-head"><span className="eyebrow">ACCOUNT</span><IconButton title="닫기" onClick={()=>setProfileOpen(false)}><X size={18}/></IconButton></header><div className="profile-summary"><div className="profile-avatar">{(data.prefs.nickname || 'W').slice(0,1)}</div><h2>{data.prefs.nickname}</h2><p>{authUser?.email || '로컬 미리보기 계정'}</p><span className="profile-tag">WBW WRITER</span></div><div className="drawer-rule"/><button className="drawer-link" onClick={()=>{setProfileOpen(false);setView('library')}}><BookOpen size={18}/><span>내 서재</span><ChevronRight size={16}/></button><button className="drawer-link" onClick={()=>{setProfileOpen(false);setSettingsOpen(true)}}><Settings size={18}/><span>환경 설정</span><ChevronRight size={16}/></button><div className="drawer-bottom"><p>나만의 문장을 쓰는 공간</p><button className="logout-button" onClick={doSignOut}><LogOut size={16}/>로그아웃</button></div></aside></>}
 
-    {settingsOpen && <Modal title="환경 설정" close={()=>setSettingsOpen(false)} wide><div className="settings-body"><section className="settings-section"><div><h3>테마 색상</h3><p>서재의 분위기를 선택해요.</p></div><div className="theme-options">{[['sky','하늘','#dceefa'],['white','하양','#fff'],['black','검정','#292929'],['gray','회색','#d6d6d6'],['sand','베이지','#eee6d9']].map(([id,label,color])=><button className={`theme-option ${data.prefs.theme===id?'chosen':''}`} key={id} onClick={()=>updatePrefs('theme',id)}><i style={{background:color}}/><span>{label}</span></button>)}</div></section><section className="settings-section"><div><h3>기본 글꼴</h3><p>편집기에 사용할 글꼴을 설정해요.</p></div><select className="settings-select" value={data.prefs.font} onChange={e=>updatePrefs('font',e.target.value)}><option>Pretendard</option><option>Georgia</option><option>바탕</option><option>맑은 고딕</option><option>serif</option></select></section><section className="settings-section"><div><h3>닉네임</h3><p>서재에 표시될 이름이에요.</p></div><div className="nickname-controls"><input value={data.prefs.nickname} onChange={e=>updatePrefs('nickname',e.target.value)} maxLength={24}/><button className="button button-outline" onClick={()=>updatePrefs('nickname',randomNames[Math.floor(Math.random()*randomNames.length)])}><Sparkles size={15}/>랜덤</button></div></section><section className="danger-zone"><div><h3>계정 탈퇴</h3><p>탈퇴하면 계정과 업로드한 글이 모두 삭제됩니다.</p></div><button className="button button-danger" onClick={()=>setModal('delete-account')}><Trash2 size={15}/>계정 탈퇴</button></section></div><div className="modal-footer"><button className="button button-dark" onClick={()=>setSettingsOpen(false)}>완료</button></div></Modal>}
     {settingsOpen && <Modal title="환경 설정" close={()=>setSettingsOpen(false)} wide><div className="settings-body"><section className="settings-section"><div><h3>테마 색상</h3><p>서재의 분위기를 선택해요.</p></div><div className="theme-options">{[['sky','하늘','#dceefa'],['white','하양','#fff'],['black','검정','#292929'],['gray','회색','#d6d6d6'],['sand','베이지','#eee6d9']].map(([id,label,color])=><button className={`theme-option ${data.prefs.theme===id?'chosen':''}`} key={id} onClick={()=>updatePrefs('theme',id)}><i style={{background:color}}/><span>{label}</span></button>)}</div></section><section className="settings-section"><div><h3>기본 글꼴</h3><p>편집기에 사용할 글꼴을 설정해요.</p></div><select className="settings-select" value={data.prefs.font} onChange={e=>updatePrefs('font',e.target.value)}><option>Pretendard</option><option>Georgia</option><option>바탕</option><option>맑은 고딕</option><option>serif</option></select></section><section className="settings-section"><div><h3>닉네임</h3><p>서재에 표시될 이름이에요.</p></div><div className="nickname-controls"><input value={data.prefs.nickname} onChange={e=>updatePrefs('nickname',e.target.value)} maxLength={24}/><button className="button button-outline" onClick={()=>updatePrefs('nickname',randomNames[Math.floor(Math.random()*randomNames.length)])}><Sparkles size={15}/>랜덤</button></div></section><section className="danger-zone"><div><h3>계정 탈퇴</h3><p>탈퇴하면 계정과 업로드한 글이 모두 삭제됩니다.</p></div><button className="button button-danger" onClick={()=>setModal('delete-account')}><Trash2 size={15}/>계정 탈퇴</button></section></div><div className="modal-footer"><button className="button button-dark" onClick={()=>setSettingsOpen(false)}>완료</button></div></Modal>}
 
     {modal==='layout' && <Modal title="문서 레이아웃" close={()=>{setModal('');restoreEditorSelectionFocus()}}><div className="layout-form"><label>용지 크기<select value={draft.page} onChange={e=>changeDraft('page',e.target.value)}><option>A4</option><option>A5</option><option>Letter</option></select></label><PagePreview draft={draft}/><div className="page-view-control"><span>페이지 보기</span><div><button type="button" className={draft.viewMode==='single'?'selected':''} onClick={()=>changeDraft('viewMode','single')}>단면 보기</button>{draft.page !== 'Letter' && <button type="button" className={draft.viewMode==='double'?'selected':''} onClick={()=>changeDraft('viewMode','double')}>양면 보기</button>}</div></div><fieldset className="margin-settings"><legend>여백</legend><div className="margin-grid">{[['marginTop','위쪽'],['marginRight','오른쪽'],['marginBottom','아래쪽'],['marginLeft','왼쪽']].map(([key,label])=><label className="number-setting" key={key}>{label}<span className="number-input-wrap"><input type="number" min="0" max="100" step="1" value={draft[key]} onChange={e=>changeDraft(key,Number(e.target.value))}/><small>mm</small></span></label>)}</div></fieldset><label className="layout-checkbox"><span>문단 첫 줄 들여쓰기</span><input type="checkbox" checked={draft.firstLineIndent !== false} onChange={e=>changeDraft('firstLineIndent',e.target.checked)}/></label><label className="number-setting">자간<span className="number-input-wrap"><input type="number" min="-1" max="10" step="0.1" value={draft.spacing} onChange={e=>changeDraft('spacing',Number(e.target.value))}/><small>px</small></span></label><label className="number-setting">줄 간격<span className="number-input-wrap"><input type="number" min="0.1" max="3" step="0.1" value={draft.line} onChange={e=>changeDraft('line',Number(e.target.value))}/><small>배</small></span></label><p className="form-note">글꼴은 이 기기에서 사용할 수 있는 글꼴을 기준으로 표시됩니다.</p></div><div className="modal-footer modal-footer-between"><button className="button button-outline" onClick={resetLayout}>기본값으로 초기화</button><button className="button button-dark" onClick={()=>{setModal('');restoreEditorSelectionFocus()}}>적용</button></div></Modal>}

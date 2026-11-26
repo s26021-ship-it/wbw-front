@@ -173,3 +173,140 @@
 @media (max-width: 650px) {
   .app-shell .editor-page .paper-wrap { margin: 12px auto 40px; }
 }
+
+/* Hide the caret while the empty-editor hint is visible. */
+.app-shell .editor-page .paper .prose-editor:has(> p:only-child:has(> br:only-child)) { caret-color: transparent; }
+
+/* The bottom bar stays visible without changing the editor or paper layout. */
+.app-shell .editor-page > .editor-bottom-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: clamp(14px, 2vw, 28px);
+  width: 100%;
+  min-height: 56px;
+  height: 56px;
+  flex: 0 0 56px;
+  padding: 0 clamp(18px, 4.5vw, 64px);
+  border-top: 1px solid var(--line);
+  background: var(--bg);
+  box-shadow: 0 -4px 16px rgba(20, 20, 20, 0.045);
+}
+.app-shell .editor-page > .editor-bottom-bar .editor-counts {
+  flex: 1 1 auto;
+  min-width: 0;
+  justify-content: flex-start;
+  gap: 22px;
+}
+.app-shell .editor-page > .editor-bottom-bar .editor-counts > span:first-child {
+  display: inline;
+  margin-right: 0;
+}
+.app-shell .editor-page > .editor-bottom-bar .editor-save-state {
+  flex: 0 0 auto;
+  margin-left: 0;
+  white-space: nowrap;
+}
+.app-shell .editor-page > .editor-bottom-bar .editor-bottom-actions {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+@media (max-width: 650px) {
+  .app-shell .editor-page > .editor-bottom-bar {
+    min-height: 82px;
+    height: auto;
+    flex-basis: auto;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 8px 12px;
+    padding: 10px 14px;
+  }
+  .app-shell .editor-page > .editor-bottom-bar .editor-counts {
+    grid-column: 1 / -1;
+    gap: 14px;
+  }
+  .app-shell .editor-page > .editor-bottom-bar .editor-save-state {
+    grid-column: 1;
+  }
+  .app-shell .editor-page > .editor-bottom-bar .editor-bottom-actions {
+    grid-column: 2;
+    grid-row: 2;
+  }
+}
+
+/* Keep the two counters and footer actions visually separated. */
+.app-shell .editor-page > .editor-bottom-bar .editor-counts { column-gap: 18px !important; }
+.app-shell .editor-page > .editor-bottom-bar .editor-bottom-actions { gap: 16px !important; }
+
+/* Keep the stacked header rows aligned at the top and while scrolling. */
+.app-shell {
+  --wbw-topbar-height: 68px;
+  --wbw-editor-top-height: 50px;
+  --wbw-toolbar-height: 54px;
+}
+.app-shell > .topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  height: var(--wbw-topbar-height);
+  min-height: var(--wbw-topbar-height);
+  flex: 0 0 var(--wbw-topbar-height);
+  box-sizing: border-box;
+}
+.app-shell .editor-page > .editor-top {
+  position: sticky;
+  top: var(--wbw-topbar-height);
+  z-index: 19;
+  height: var(--wbw-editor-top-height);
+  min-height: var(--wbw-editor-top-height);
+  flex: 0 0 var(--wbw-editor-top-height);
+  box-sizing: border-box;
+  background: var(--bg);
+}
+.app-shell .editor-page > .toolbar {
+  position: sticky;
+  top: calc(var(--wbw-topbar-height) + var(--wbw-editor-top-height));
+  z-index: 18;
+  height: var(--wbw-toolbar-height);
+  min-height: var(--wbw-toolbar-height);
+  flex: 0 0 var(--wbw-toolbar-height);
+  box-sizing: border-box;
+}
+@media (max-width: 650px) {
+  .app-shell {
+    --wbw-editor-top-height: 44px;
+    --wbw-toolbar-height: 49px;
+  }
+}
+
+/* Keep editor and browser-PDF typography tied to the same live layout values. */
+.app-shell .editor-page .paper .prose-editor,
+.app-shell .editor-page .paper .prose-editor * {
+  letter-spacing: var(--paper-spacing) !important;
+}
+.app-shell .editor-page .paper .prose-editor > :is(p, h1, h2, h3, blockquote, pre, ul, ol) {
+  line-height: var(--paper-line) !important;
+  margin-block-start: 0;
+  margin-block-end: var(--paper-paragraph-spacing, 0.8em);
+}
+.app-shell .print-only {
+  font-size: var(--paper-size);
+  letter-spacing: var(--paper-spacing);
+  line-height: var(--paper-line);
+}
+.app-shell .print-only * {
+  letter-spacing: var(--paper-spacing) !important;
+}
+.app-shell .print-only > div > :is(p, h1, h2, h3, blockquote, pre, ul, ol) {
+  line-height: var(--paper-line) !important;
+  margin-block-start: 0;
+  margin-block-end: var(--paper-paragraph-spacing, 0.8em);
+}
+.app-shell .print-only > h1 {
+  margin: 0 0 36px;
+  font: 600 27px var(--paper-font);
+  letter-spacing: -0.04em !important;
+}
