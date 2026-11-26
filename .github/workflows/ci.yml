@@ -1,0 +1,72 @@
+name: Front CI
+
+# PR을 올리거나 develop/main에 푸시하면 빌드를 확인하고 Discord front 채널로 알린다.
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [develop, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: front-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: 빌드
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: 패키지 설치
+        run: npm ci
+
+      - name: Lint (있으면)
+        run: npm run lint --if-present
+
+      - name: 테스트 (있으면)
+        run: npm test --if-present
+
+      - name: 빌드
+        run: npm run build
+
+      - name: Discord 알림
+        if: always()
+        env:
+          WEBHOOK_URL: ${{ secrets.DISCORD_FRONT_WEBHOOK_URL }}
+          STATUS: ${{ job.status }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "$WEBHOOK_URL" ]; then echo "::notice::Discord 웹훅이 없어 알림을 건너뜁니다."; exit 0; fi
+          case "$STATUS" in
+            success) TITLE="✅ 프론트 빌드 성공"; COLOR=3066993 ;;
+            failure) TITLE="❌ 프론트 빌드 실패"; COLOR=15158332 ;;
+            *)       TITLE="⚪ 프론트 빌드 취소"; COLOR=9807270 ;;
+          esac
+          if [ -n "$PR_NUMBER" ]; then
+            WHERE="[PR #${PR_NUMBER}](${PR_URL}) → \`${GITHUB_BASE_REF}\`"; DESC="$PR_TITLE"
+          else
+            WHERE="\`${GITHUB_REF_NAME}\`"; DESC="$(printf '%s' "$COMMIT_MESSAGE" | head -n 1)"
+          fi
+          COMMIT="[\`${GITHUB_SHA:0:7}\`](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA})"
+          jq -n --arg t "$TITLE" --arg u "$RUN_URL" --arg d "$DESC" --argjson c "$COLOR" \
+                --arg w "$WHERE" --arg cm "$COMMIT" --arg a "$GITHUB_ACTOR" --arg r "$GITHUB_REPOSITORY" \
+            '{username:"wbw-front CI", embeds:[{title:$t, url:$u, description:$d, color:$c,
+              fields:[{name:"위치",value:$w,inline:true},{name:"커밋",value:$cm,inline:true},{name:"작성자",value:$a,inline:true}],
+              footer:{text:$r}, timestamp:(now|todate)}]}' \
+          | curl -fsS -H "Content-Type: application/json" -d @- "$WEBHOOK_URL" >/dev/null \
+          || echo ":⚠️:Discord 알림 전송 실패"
