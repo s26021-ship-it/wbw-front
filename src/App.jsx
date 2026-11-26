@@ -5,11 +5,12 @@ import {
   AlignCenter, AlignLeft, AlignRight, ArrowDown, ArrowLeft, ArrowUpDown,
   Bold, BookOpen, Check, ChevronDown, ChevronRight, ChevronsUpDown,
   CircleHelp, Clock3, Download, FilePlus2, FileText, Folder,
+  CircleHelp, Clock3, Download, FilePlus2, FileText, Folder,
   FolderPlus, Italic, Link2, LogOut, Menu, Minus, MoreHorizontal, PanelLeftClose,
   Plus, Printer, Search, Settings, Share2, SlidersHorizontal, Sparkles,
   Trash2, Underline, X
 } from 'lucide-react';
-import { getCurrentUser, startGoogleLogin, signOut } from './backend.js';
+import { getCurrentUser, startGoogleLogin, signOut, getFolders, createFolder as apiCreateFolder, updateFolder as apiUpdateFolder, removeFolder as apiRemoveFolder, getDocuments, getDocument, createDocument, updateDocument, moveDocument, deleteDocument, getShares, createShare, updateShare, getSettings, updateSettings as apiUpdateSettings, getPublicShare, verifyPublicShare, downloadDocumentPdf } from './backend.js';
 
 const initial = {
   folders: [
@@ -475,6 +476,8 @@ export default function App() {
   const [data, setData] = useState(loadData);
   const [authUser, setAuthUser] = useState(null);
   const [authReady, setAuthReady] = useState(false);
+  const [apiReady, setApiReady] = useState(false);
+  const settingsCacheRef = useRef(null);
   const [previewMode, setPreviewMode] = useState(false);
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState('');
@@ -548,14 +551,25 @@ export default function App() {
     if (!user) { nicknameUserIdRef.current = null; return; }
     if (nicknameUserIdRef.current === user.id) return;
     nicknameUserIdRef.current = user.id;
-    setData(current => ({ ...current, prefs: { ...current.prefs, nickname: current.prefs.nickname || randomNames[Math.floor(Math.random() * randomNames.length)] } }));
+    let savedNickname = '';
+    try { savedNickname = localStorage.getItem(`wbw-nickname:${user.id}`) || ''; } catch {}
+    const nickname = savedNickname || user.nickname || user.displayName || user.name || user.email?.split('@')[0] || randomNames[Math.floor(Math.random() * randomNames.length)];
+    setData(current => ({ ...current, prefs: { ...current.prefs, nickname } }));
   }
 
   useEffect(() => { localStorage.setItem('wbw-data', JSON.stringify(data)); }, [data]);
   useEffect(() => {
+    if (!authUser?.id || !data.prefs.nickname) return;
+    try { localStorage.setItem(`wbw-nickname:${authUser.id}`, data.prefs.nickname); } catch {}
+  }, [authUser?.id, data.prefs.nickname]);
+  useEffect(() => {
     let active = true;
     getCurrentUser().then(user => {
+    getCurrentUser().then(user => {
       if (!active) return;
+      setAuthUser(user);
+      syncUserNickname(user);
+      if (new URLSearchParams(window.location.search).get('error') === 'oauth') setAuthError('Google 로그인에 실패했어요. 잠시 후 다시 시도해 주세요.');
       setAuthUser(user);
       syncUserNickname(user);
       if (new URLSearchParams(window.location.search).get('error') === 'oauth') setAuthError('Google 로그인에 실패했어요. 잠시 후 다시 시도해 주세요.');
@@ -563,8 +577,10 @@ export default function App() {
     }).catch(error => {
       if (!active) return;
       setAuthError(error?.message || '백엔드 서버에 연결할 수 없어요. 서버 실행 상태를 확인해 주세요.');
+      setAuthError(error?.message || '백엔드 서버에 연결할 수 없어요. 서버 실행 상태를 확인해 주세요.');
       setAuthReady(true);
     });
+    return () => { active = false; };
     return () => { active = false; };
   }, []);
   useEffect(() => {
@@ -1208,10 +1224,41 @@ export default function App() {
     if (confirmed) current?.onConfirm?.(dialogInput);
     setDialogInput('');
   }
-  async function exportPdf() { setModal(''); window.print(); }
-  function handleGoogleLogin() {
+  async function exportPdf(mode = 'browser') {
+    setModal('');
+    if (authUser && mode === 'server') {
+      try {
+        clearTimeout(timerRef.current);
+        const saved = await saveDraft(draft);
+        const documentId = currentDoc?.backendId ?? (typeof saved === 'number' || typeof saved === 'string' ? saved : null);
+        if (!documentId) throw new Error('PDF로 내보내려면 먼저 글을 입력하고 저장해 주세요.');
+        const blob = await downloadDocumentPdf(documentId, {
+          pageSize: draft.page === 'Letter' ? 'LETTER' : draft.page,
+          orientation: 'PORTRAIT',
+          marginTop: draft.marginTop,
+          marginRight: draft.marginRight,
+          marginBottom: draft.marginBottom,
+          marginLeft: draft.marginLeft,
+          includeTitle: true
+        });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${(draft.title || 'WBW 문서').replace(/[\\/:*?"<>|]/g, '_')}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      } catch (error) { setNotice(error.message || 'PDF를 내보내지 못했어요.'); }
+      return;
+    }
+    try { await document.fonts?.ready; } catch { /* 시스템 글꼴만으로 인쇄를 계속합니다. */ }
+    requestAnimationFrame(() => requestAnimationFrame(() => window.print()));
+  }
+  async function handleGoogleLogin() {
     setAuthError(''); setAuthSuccess('');
     setAuthLoading(true);
+    startGoogleLogin();
     startGoogleLogin();
   }
   function doSignOut() {
@@ -1316,11 +1363,7 @@ export default function App() {
   const exportTextColor = draft.color?.toLowerCase() === '#252525' ? exportPalette.foreground : draft.color;
   const routePath = window.location.pathname.replace(/\/+$/, '') || '/';
   const knownErrorPath = ['/403', '/500', '/offline', '/login'].includes(routePath);
-  const isShareRoute = /^\/share\/[^/]+\/?$/.test(window.location.pathname);
-=======
-  const knownErrorPath = ['/403', '/500', '/offline', '/login'].includes(routePath);
   const isShareRoute = /^\/(?:share|s)\/[^/]+\/?$/.test(window.location.pathname);
->>>>>>> Stashed changes
   const showNotFound = routePath !== '/' && routePath !== '/index.html' && !knownErrorPath && !isShareRoute;
 
   if (routePath === '/403') return <ErrorScreen kind="forbidden" themeClass={themeClass} font={data.prefs.font} onHome={() => window.location.assign('/')}/>;
@@ -1341,7 +1384,7 @@ export default function App() {
 
   if (!authReady) return <main className={`app-shell login-shell ${themeClass}`}><div className="auth-loading"><span className="brand-mark">w.</span><span>WBW를 준비하고 있어요</span></div></main>;
   if (!authUser && !previewMode) return <LoginScreen
-    loading={authLoading} error={authError} startGoogleLogin={handleGoogleLogin}
+    loading={authLoading} error={authError} onGoogle={handleGoogleLogin}
     onPreview={() => { setPreviewMode(true); setAuthError(''); setAuthSuccess(''); }}
   />;
 
@@ -1366,8 +1409,7 @@ export default function App() {
   return <main className={`app-shell ${themeClass}`} style={{ '--app-font': data.prefs.font }}>
     <div className="topbar">
       <button className="brand" onClick={() => setView('library')}><span className="brand-mark">w.</span><span>WBW</span></button>
-<<<<<<< Updated upstream
-      <nav className="top-nav"><button className={view==='library'?'nav-current':''} onClick={() => setView('library')}>내 서재</button></nav>
+      {view === 'library' && <nav className="top-nav"><button className="nav-current" onClick={() => setView('library')}>내 서재</button></nav>}
       <div className="top-actions"><button className="avatar" aria-label="프로필 열기" onClick={() => setProfileOpen(true)}>{(data.prefs.nickname || 'W').slice(0,1)}</button></div>
     </div>
 
@@ -1395,12 +1437,13 @@ export default function App() {
     {profileOpen && <><div className="drawer-scrim" onClick={()=>setProfileOpen(false)}/><aside className="profile-drawer"><header className="drawer-head"><span className="eyebrow">ACCOUNT</span><IconButton title="닫기" onClick={()=>setProfileOpen(false)}><X size={18}/></IconButton></header><div className="profile-summary"><div className="profile-avatar">{(data.prefs.nickname || 'W').slice(0,1)}</div><h2>{data.prefs.nickname}</h2><p>{authUser?.email || '로컬 미리보기 계정'}</p><span className="profile-tag">WBW WRITER</span></div><div className="drawer-rule"/><button className="drawer-link" onClick={()=>{setProfileOpen(false);setView('library')}}><BookOpen size={18}/><span>내 서재</span><ChevronRight size={16}/></button><button className="drawer-link" onClick={()=>{setProfileOpen(false);setSettingsOpen(true)}}><Settings size={18}/><span>환경 설정</span><ChevronRight size={16}/></button><div className="drawer-bottom"><p>나만의 문장을 쓰는 공간</p><button className="logout-button" onClick={doSignOut}><LogOut size={16}/>로그아웃</button></div></aside></>}
 
     {settingsOpen && <Modal title="환경 설정" close={()=>setSettingsOpen(false)} wide><div className="settings-body"><section className="settings-section"><div><h3>테마 색상</h3><p>서재의 분위기를 선택해요.</p></div><div className="theme-options">{[['sky','하늘','#dceefa'],['white','하양','#fff'],['black','검정','#292929'],['gray','회색','#d6d6d6'],['sand','베이지','#eee6d9']].map(([id,label,color])=><button className={`theme-option ${data.prefs.theme===id?'chosen':''}`} key={id} onClick={()=>updatePrefs('theme',id)}><i style={{background:color}}/><span>{label}</span></button>)}</div></section><section className="settings-section"><div><h3>기본 글꼴</h3><p>편집기에 사용할 글꼴을 설정해요.</p></div><select className="settings-select" value={data.prefs.font} onChange={e=>updatePrefs('font',e.target.value)}><option>Pretendard</option><option>Georgia</option><option>바탕</option><option>맑은 고딕</option><option>serif</option></select></section><section className="settings-section"><div><h3>닉네임</h3><p>서재에 표시될 이름이에요.</p></div><div className="nickname-controls"><input value={data.prefs.nickname} onChange={e=>updatePrefs('nickname',e.target.value)} maxLength={24}/><button className="button button-outline" onClick={()=>updatePrefs('nickname',randomNames[Math.floor(Math.random()*randomNames.length)])}><Sparkles size={15}/>랜덤</button></div></section><section className="danger-zone"><div><h3>계정 탈퇴</h3><p>탈퇴하면 계정과 업로드한 글이 모두 삭제됩니다.</p></div><button className="button button-danger" onClick={()=>setModal('delete-account')}><Trash2 size={15}/>계정 탈퇴</button></section></div><div className="modal-footer"><button className="button button-dark" onClick={()=>setSettingsOpen(false)}>완료</button></div></Modal>}
+    {settingsOpen && <Modal title="환경 설정" close={()=>setSettingsOpen(false)} wide><div className="settings-body"><section className="settings-section"><div><h3>테마 색상</h3><p>서재의 분위기를 선택해요.</p></div><div className="theme-options">{[['sky','하늘','#dceefa'],['white','하양','#fff'],['black','검정','#292929'],['gray','회색','#d6d6d6'],['sand','베이지','#eee6d9']].map(([id,label,color])=><button className={`theme-option ${data.prefs.theme===id?'chosen':''}`} key={id} onClick={()=>updatePrefs('theme',id)}><i style={{background:color}}/><span>{label}</span></button>)}</div></section><section className="settings-section"><div><h3>기본 글꼴</h3><p>편집기에 사용할 글꼴을 설정해요.</p></div><select className="settings-select" value={data.prefs.font} onChange={e=>updatePrefs('font',e.target.value)}><option>Pretendard</option><option>Georgia</option><option>바탕</option><option>맑은 고딕</option><option>serif</option></select></section><section className="settings-section"><div><h3>닉네임</h3><p>서재에 표시될 이름이에요.</p></div><div className="nickname-controls"><input value={data.prefs.nickname} onChange={e=>updatePrefs('nickname',e.target.value)} maxLength={24}/><button className="button button-outline" onClick={()=>updatePrefs('nickname',randomNames[Math.floor(Math.random()*randomNames.length)])}><Sparkles size={15}/>랜덤</button></div></section><section className="danger-zone"><div><h3>계정 탈퇴</h3><p>탈퇴하면 계정과 업로드한 글이 모두 삭제됩니다.</p></div><button className="button button-danger" onClick={()=>setModal('delete-account')}><Trash2 size={15}/>계정 탈퇴</button></section></div><div className="modal-footer"><button className="button button-dark" onClick={()=>setSettingsOpen(false)}>완료</button></div></Modal>}
 
     {modal==='layout' && <Modal title="문서 레이아웃" close={()=>{setModal('');restoreEditorSelectionFocus()}}><div className="layout-form"><label>용지 크기<select value={draft.page} onChange={e=>changeDraft('page',e.target.value)}><option>A4</option><option>A5</option><option>Letter</option></select></label><PagePreview draft={draft}/><div className="page-view-control"><span>페이지 보기</span><div><button type="button" className={draft.viewMode==='single'?'selected':''} onClick={()=>changeDraft('viewMode','single')}>단면 보기</button>{draft.page !== 'Letter' && <button type="button" className={draft.viewMode==='double'?'selected':''} onClick={()=>changeDraft('viewMode','double')}>양면 보기</button>}</div></div><fieldset className="margin-settings"><legend>여백</legend><div className="margin-grid">{[['marginTop','위쪽'],['marginRight','오른쪽'],['marginBottom','아래쪽'],['marginLeft','왼쪽']].map(([key,label])=><label className="number-setting" key={key}>{label}<span className="number-input-wrap"><input type="number" min="0" max="100" step="1" value={draft[key]} onChange={e=>changeDraft(key,Number(e.target.value))}/><small>mm</small></span></label>)}</div></fieldset><label className="layout-checkbox"><span>문단 첫 줄 들여쓰기</span><input type="checkbox" checked={draft.firstLineIndent !== false} onChange={e=>changeDraft('firstLineIndent',e.target.checked)}/></label><label className="number-setting">자간<span className="number-input-wrap"><input type="number" min="-1" max="10" step="0.1" value={draft.spacing} onChange={e=>changeDraft('spacing',Number(e.target.value))}/><small>px</small></span></label><label className="number-setting">줄 간격<span className="number-input-wrap"><input type="number" min="0.1" max="3" step="0.1" value={draft.line} onChange={e=>changeDraft('line',Number(e.target.value))}/><small>배</small></span></label><p className="form-note">글꼴은 이 기기에서 사용할 수 있는 글꼴을 기준으로 표시됩니다.</p></div><div className="modal-footer modal-footer-between"><button className="button button-outline" onClick={resetLayout}>기본값으로 초기화</button><button className="button button-dark" onClick={()=>{setModal('');restoreEditorSelectionFocus()}}>적용</button></div></Modal>}
 
     {modal==='upload' && <Modal title="글 업로드" close={()=>{setModal('');setPasswordDraft('')}}><div className="upload-form"><label>글 제목<input value={draft.title} onChange={e=>changeDraft('title',e.target.value)} placeholder="제목을 입력해 주세요"/></label><label>공개 설정<select value={draft.visibility || '비공개'} onChange={e=>{changeDraft('visibility',e.target.value);if(e.target.value!=='비밀번호 보호')setPasswordDraft('')}}><option>비공개</option><option>링크 공개</option><option>비밀번호 보호</option></select></label>{draft.visibility==='비밀번호 보호'&&<label>열람 비밀번호<input type="password" autoComplete="new-password" value={passwordDraft} onChange={e=>setPasswordDraft(e.target.value)} placeholder="비밀번호를 입력해 주세요"/></label>}<div className="share-link-box"><Link2 size={16}/><span>{currentDoc?.share?.url || (currentDoc?.backendId ? '저장 후 공유 링크가 표시됩니다.' : '글을 저장한 뒤 링크를 만들 수 있어요.')}</span><button onClick={shareDoc}>복사</button></div><p className="form-note">링크 권한과 비밀번호는 백엔드에서 확인합니다.</p></div><div className="modal-footer"><button className="button button-dark" onClick={saveUpload}>저장하기</button></div></Modal>}
 
-    {modal==='export' && <Modal title="문서 내보내기" close={()=>setModal('')} wide><div className="export-content"><div className="preview-area"><div className="preview-paper"><span className="preview-top">WBW · {draft.page}</span>{draft.title && <h3>{draft.title}</h3>}<div className="preview-text">{countChars(draft.body).slice(0,280) || '작성한 내용이 여기에 미리 표시됩니다.'}</div><span className="preview-page">1</span></div><span className="preview-caption">1쪽 미리보기</span></div><div className="export-options"><span className="eyebrow">FILE FORMAT</span><button onClick={exportPdf}><span className="format-icon"><Printer size={18}/></span><span><b>PDF 문서</b><small>인쇄 대화상자에서 PDF로 저장</small></span><ChevronRight size={17}/></button></div></div></Modal>}
+    {modal==='export' && <Modal title="문서 내보내기" close={()=>setModal('')} wide><div className="export-content"><div className="preview-area"><div className="preview-paper"><span className="preview-top">WBW · {draft.page}</span>{draft.title && <h3>{draft.title}</h3>}<div className="preview-text">{countChars(draft.body).slice(0,280) || '작성한 내용이 여기에 미리 표시됩니다.'}</div><span className="preview-page">1</span></div><span className="preview-caption">1쪽 미리보기</span></div><div className="export-options"><span className="eyebrow">FILE FORMAT</span><button onClick={()=>exportPdf('browser')}><span className="format-icon"><Printer size={18}/></span><span><b>PDF 문서</b><small>인쇄 창에서 "PDF로 저장" (한글·쪽 나누기 정확)</small></span><ChevronRight size={17}/></button>{authUser && <button onClick={()=>exportPdf('server')}><span className="format-icon"><Download size={18}/></span><span><b>서버 PDF (임시)</b><small>서버 글꼴 문제가 해결되기 전에는 한글이 깨질 수 있어요</small></span><ChevronRight size={17}/></button>}</div></div></Modal>}
 
     {modal==='delete-account' && <Modal title="계정 탈퇴" close={()=>{setModal('');setDeleteConfirmName('')}}><div className="delete-warning"><div className="warning-icon"><Trash2 size={20}/></div><h3>정말 탈퇴하시겠어요?</h3><p>탈퇴하면 계정과 업로드한 글이 모두 삭제되며 되돌릴 수 없습니다.</p><label>확인을 위해 닉네임을 입력해 주세요<input value={deleteConfirmName} placeholder={data.prefs.nickname} onChange={e=>setDeleteConfirmName(e.target.value)}/></label></div><div className="modal-footer"><button className="button button-outline" onClick={()=>{setModal('');setDeleteConfirmName('')}}>취소</button><button className="button button-danger" disabled={deleteConfirmName!==data.prefs.nickname} onClick={()=>setNotice('계정 삭제는 실제 인증·서버 연동 후 활성화됩니다.')}>영구 삭제</button></div></Modal>}
 
@@ -1413,7 +1456,7 @@ export default function App() {
   </main>;
 }
 
-function LoginScreen({ loading, error, startGoogleLogin, onPreview }) {
+function LoginScreen({ loading, error, onGoogle, onPreview }) {
   return <main className="login-shell">
     <header className="login-header"><a className="brand" href="#top"><span className="brand-mark">w.</span><span>WBW</span></a><span className="login-header-note">WRITE BY WRITING</span></header>
     <div className="login-layout">
@@ -1421,7 +1464,7 @@ function LoginScreen({ loading, error, startGoogleLogin, onPreview }) {
       <section className="login-panel"><div className="login-card">
         <div className="login-heading"><span className="eyebrow">WELCOME TO WBW</span><h1>다시, 문장을 써볼까요?</h1><p>글을 쓰고, 정리하고, 오래 간직하세요.</p></div>
         {error && <p className="auth-message auth-error" role="alert">{error}</p>}
-        <button className="google-button" onClick={startGoogleLogin} disabled={loading}>{loading?<span className="button-spinner"/>:<GoogleMark/>}Google 계정으로 계속하기</button>
+        <button className="google-button" onClick={onGoogle} disabled={loading}>{loading?<span className="button-spinner"/>:<GoogleMark/>}Google 계정으로 계속하기</button>
         <div className="preview-entry"><span>먼저 둘러보고 싶다면</span><button onClick={onPreview}>로컬 미리보기 <ChevronRight size={14}/></button></div>
       </div><p className="login-legal">계속 진행하면 WBW의 이용 약관과 개인정보 처리방침에 동의하는 것으로 간주됩니다.</p></section>
     </div><footer className="login-footer"><span>© 2026 WBW</span><span>WRITE BY WRITING</span></footer>
